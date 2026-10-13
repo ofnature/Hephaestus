@@ -1,0 +1,43 @@
+<Project Sdk="Dalamud.NET.Sdk/15.0.0">
+
+  <PropertyGroup>
+    <AssemblyName>Hephaestus</AssemblyName>
+    <RootNamespace>Hephaestus</RootNamespace>
+    <Version>0.1.0</Version>
+    <DalamudLibPath>$(AppData)\XIVLauncher\addon\Hooks\dev\</DalamudLibPath>
+  </PropertyGroup>
+
+  <!-- Allow the test assembly to access internal types -->
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>Hephaestus.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+  <!--
+    raphael-cli, bundled. raphael-rs publishes no prebuilt CLI, so tools/build-raphael-cli.ps1 builds
+    it from a pinned tag into Tools/raphael/ (git-ignored: a 7 MB binary does not belong in history).
+    Whatever is staged there is copied beside Hephaestus.dll, and DalamudPackager zips the output
+    folder, so the binary, its licence and its notice all ship in latest.zip. A build without it
+    still succeeds; the plugin then reports the baseline solver as unavailable.
+  -->
+  <ItemGroup>
+    <None Include="Tools/raphael/**" Link="raphael/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!--
+    Dev-plugin reload race (same fix as Charon.csproj, where it was diagnosed): Dalamud watches the
+    DLL and reloads the moment it changes, then reads Hephaestus.json alongside it. The compiler
+    writes the DLL FIRST and DalamudPackager writes the manifest several seconds later, so the
+    reload can read a manifest that is still open and fail. Touching the DLL after the manifest is
+    written makes the DLL the LAST file to change.
+
+    Must hook the PACKAGER's targets, not "Build": SDK targets run after project-defined ones, so
+    AfterTargets="Build" here would still fire before the manifest was written.
+  -->
+  <Target Name="TouchAssemblyAfterPackaging"
+          AfterTargets="DefaultDalamudPackagerDebug;DefaultDalamudPackagerRelease">
+    <Touch Files="$(TargetPath)" />
+  </Target>
+
+</Project>

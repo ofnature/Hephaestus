@@ -1,0 +1,9 @@
+{
+  "Name": "Hephaestus",
+  "Author": "ofnature",
+  "Punchline": "Live-adaptive crafting solver with unattended craft queues.",
+  "Description": "Crafting automation built around a live, adaptive solver: a Raphael baseline re-scored against the real craft state after every step. Craft queues, automatic material sourcing (inventory, FC chest, retainers, vendors), multibox-first.",
+  "RepoUrl": "https://github.com/ofnature/Hephaestus",
+  "Tags": ["crafting", "automation", "solver", "multibox"],
+  "DalamudApiLevel": 15
+}

@@ -1,0 +1,18 @@
+bin/
+obj/
+.vs/
+*.user
+TestResults/
+
+# Internal docs — keep local, not in the public repo (README.md is the only tracked .md)
+CLAUDE.md
+ROADMAP.md
+
+# Internal planning docs live under docs/ — keep local (README.md is the only tracked .md)
+docs/
+
+# Third-party source checkouts and their build output (raphael-rs for raphael-cli)
+.build/
+
+# raphael-cli staged by tools/build-raphael-cli.ps1 — built from source, never committed
+Hephaestus/Tools/raphael/

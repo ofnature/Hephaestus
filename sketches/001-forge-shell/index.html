@@ -1,0 +1,469 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hephaestus — Forge shell</title>
+<style>
+:root {
+  --accent:#D9A633; --accent-soft:#E8C469; --accent-dim:rgba(217,166,51,0.18);
+  --card:#12171B; --card-soft:#161B1F; --card-hover:#1A2025;
+  --border:#38424D; --hairline:rgba(255,255,255,0.055);
+  --t-strong:#F2EFE6; --t-2:#C9C2B2; --t-dim:#8F8A7C; --t-muted:#5E5A50;
+  --green:#33BF59; --yellow:#D9BF1A; --amber:#EBBD57; --rose:#ED6B80;
+  --bg:#0A0C0E;
+}
+* { box-sizing:border-box; margin:0; padding:0; }
+body { font-family:-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  background:#050607; color:var(--t-strong); -webkit-font-smoothing:antialiased;
+  padding:24px; }
+.window { width:860px; height:640px; background:var(--bg); border:1px solid #1c2024;
+  border-radius:7px; overflow:hidden; display:flex; }
+
+/* ---- sidebar ---- */
+.sidebar { width:160px; flex-shrink:0; background:#0E1013; border-right:1px solid #1A1D21;
+  display:flex; flex-direction:column; padding:8px 6px; }
+.navgroup { font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:var(--t-muted);
+  padding:9px 7px 3px; }
+.navrow { height:38px; display:flex; align-items:center; gap:10px; padding-left:13px; border-radius:6px;
+  color:var(--t-2); cursor:pointer; position:relative; font-size:13px; user-select:none; }
+.navrow:hover { background:var(--card-hover); }
+.navrow.active { background:var(--accent-dim); color:var(--t-strong); }
+.navrow.active::before { content:''; position:absolute; left:0; top:7px; bottom:7px; width:3px;
+  background:var(--accent); border-radius:2px; }
+.navrow .ico { width:16px; text-align:center; font-size:12px; opacity:.85; }
+.navrow .badge { margin-left:auto; margin-right:8px; font-size:10px; padding:1px 7px; border-radius:10px;
+  background:rgba(235,189,87,0.25); color:var(--amber); }
+
+/* ---- header ---- */
+.header { height:88px; flex-shrink:0; display:flex; align-items:center; position:relative; padding:0 18px;
+  background:
+    radial-gradient(120% 130% at 12% 0%, rgba(232,116,42,0.28), rgba(0,0,0,0) 55%),
+    linear-gradient(90deg, rgba(232,116,42,0.20), rgba(217,166,51,0.12) 50%, rgba(10,12,14,0) 85%);
+  border-bottom:1.2px solid rgba(232,116,42,0.30); overflow:hidden; }
+.ember { position:absolute; border-radius:50%; background:#F2C14E; opacity:0;
+  animation:rise var(--d,5s) linear infinite; animation-delay:var(--dl,0s);
+  box-shadow:0 0 6px 1px rgba(242,193,78,0.55); }
+@keyframes rise {
+  0%   { transform:translateY(60px) translateX(0) scale(.6); opacity:0; }
+  15%  { opacity:.9; }
+  100% { transform:translateY(-90px) translateX(var(--dx,14px)) scale(1.1); opacity:0; }
+}
+.flame { transform-origin:50% 100%; animation:flicker 1.6s ease-in-out infinite; }
+@keyframes flicker {
+  0%,100% { transform:scale(1) rotate(-1deg); }
+  25% { transform:scale(1.06,.98) rotate(1deg); }
+  50% { transform:scale(.96,1.04) rotate(-1.5deg); }
+  75% { transform:scale(1.04,.97) rotate(1deg); }
+}
+.brand { display:flex; flex-direction:column; gap:3px; }
+.brand .top { display:flex; align-items:center; gap:10px; }
+.brand .mark { width:24px; height:24px; flex-shrink:0; }
+.brand .wordmark { font-size:21px; font-weight:700; letter-spacing:.02em; line-height:1; }
+.brand .subtitle { font-size:10.5px; text-transform:uppercase; letter-spacing:.16em; color:var(--accent-soft); }
+.header .right { margin-left:auto; display:flex; flex-direction:column; align-items:flex-end; gap:4px;
+  margin-right:38px; }
+.cog { position:absolute; right:13px; bottom:13px; width:24px; height:24px; border-radius:5px;
+  display:flex; align-items:center; justify-content:center; color:var(--t-2); cursor:pointer;
+  background:var(--card-soft); border:1px solid var(--border); font-size:13px; }
+
+/* ---- pills / tiles / buttons / toggle ---- */
+.pill { display:inline-flex; align-items:center; gap:7px; font-size:10px; height:22px; padding:0 10px;
+  border-radius:11px; background:var(--accent-dim); border:1px solid rgba(217,166,51,0.55); color:var(--accent); }
+.pill .dot { width:5.6px; height:5.6px; border-radius:50%; background:var(--accent); }
+.pill.green { color:var(--green); border-color:rgba(51,191,89,0.55); background:rgba(51,191,89,0.16); }
+.pill.green .dot { background:var(--green); }
+.pill.amber { color:var(--amber); border-color:rgba(235,189,87,0.55); background:rgba(235,189,87,0.16); }
+.pill.amber .dot { background:var(--amber); }
+
+.content { flex:1; overflow-y:auto; padding:11px 9px; min-width:0; }
+.page { display:none; }
+.page.active { display:block; }
+
+.pagehead h1 { font-size:19px; font-weight:700; }
+.pagehead .sub { font-size:12px; color:var(--t-muted); margin-top:2px; }
+.pagehead hr { border:none; border-top:1px solid var(--hairline); margin:8px 0 10px; }
+
+.stats { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; margin-bottom:10px; }
+.tile { height:58px; background:var(--card-soft); border:1px solid rgba(56,66,77,0.6);
+  border-left:3px solid var(--accent); border-radius:6px; padding:9px 11px; min-width:0;
+  display:flex; flex-direction:column; justify-content:space-between; }
+.tile .label { font-size:10.5px; text-transform:uppercase; letter-spacing:.1em; color:var(--t-dim); }
+.tile .row { display:flex; align-items:baseline; justify-content:space-between; gap:6px; }
+.tile .value { font-size:16px; font-weight:600; }
+.tile .sub { font-size:10.5px; color:var(--t-dim); }
+.tile.warn { border-left-color:var(--amber); }
+.tile.warn .value { color:var(--amber); }
+.tile.good { border-left-color:var(--green); }
+.tile.good .value { color:var(--green); }
+
+.btn { height:28px; padding:0 13px; border-radius:5px; border:1px solid transparent; font-size:12.5px;
+  font-weight:600; cursor:pointer; background:rgba(217,166,51,0.55); color:#17130a; }
+.btn:hover { background:rgba(217,166,51,0.75); }
+.btn.ghost { background:var(--card-soft); color:var(--t-2); border-color:rgba(56,66,77,0.6); }
+.btn.ghost:hover { background:var(--card-hover); }
+.btn:disabled { background:var(--card-soft); color:var(--t-muted); cursor:not-allowed; }
+.btn.small { height:20px; padding:0 8px; font-size:11px; border-radius:4px; }
+
+.tog { width:38px; height:20px; border-radius:10px; position:relative; cursor:pointer; flex-shrink:0;
+  border:1px solid var(--border); background:var(--card-soft); }
+.tog .knob { position:absolute; top:2px; left:3px; width:16px; height:16px; border-radius:50%;
+  background:var(--t-2); transition:left .12s; }
+.tog.on { background:rgba(217,166,51,0.35); border-color:var(--accent); }
+.tog.on .knob { left:19px; background:var(--t-strong); }
+
+/* ---- queue cards ---- */
+.qcard { position:relative; background:var(--card); border:1px solid rgba(56,66,77,0.6);
+  border-radius:7px; padding:10px 12px 10px 15px; margin-bottom:8px; }
+.qcard .stripe { position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--border); }
+.qcard.current { border-color:rgba(217,166,51,0.55); }
+.qcard.current .stripe { background:var(--accent); }
+.qcard.done { opacity:.78; }
+.qcard.done .stripe { background:var(--green); }
+.qcard.flagged { border-color:rgba(235,189,87,0.5); }
+.qcard.flagged .stripe { background:var(--amber); }
+.qcard .topline { display:flex; align-items:baseline; gap:8px; padding-right:88px; }
+.qcard .name { font-size:13px; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.qcard .qty { font-size:11px; color:var(--t-2); margin-left:auto; }
+.qcard .qty.good { color:var(--green); }
+.qcard .flag { font-size:11px; color:var(--amber); margin-top:3px; }
+.qcard .flag .retry { color:var(--accent); cursor:pointer; margin-left:6px; }
+.qprog { display:flex; align-items:center; gap:8px; margin-top:7px; }
+.qprog .bar { flex:1; height:6px; background:#20262d; border-radius:3px; overflow:hidden;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04); }
+.qprog .fill { height:100%; background:var(--accent); }
+.qprog .fill.green { background:var(--green); }
+.qprog .txt { font-size:11px; color:var(--t-2); min-width:54px; text-align:right; }
+.qcard .acts { position:absolute; right:10px; top:9px; display:flex; gap:5px; }
+.qcard .mats { font-size:11px; color:var(--yellow); margin-top:4px; }
+
+/* ---- sections / settings / tables ---- */
+.sechead { font-size:11px; text-transform:uppercase; letter-spacing:.12em; color:var(--accent);
+  margin:14px 0 6px; display:flex; align-items:center; gap:8px; }
+.sechead::after { content:''; flex:1; height:1px; background:rgba(32,36,42,1); }
+.lead { font-size:12.5px; color:var(--t-2); }
+.sub { font-size:12px; color:var(--t-2); }
+.muted { font-size:11.5px; color:var(--t-muted); }
+.help { color:var(--t-muted); cursor:help; }
+
+.sgroup { background:var(--card-soft); border:1px solid rgba(56,66,77,0.6); border-radius:7px;
+  padding:12px 6px 8px; margin-bottom:14px; }
+.sgroup .title { font-size:10.5px; text-transform:uppercase; letter-spacing:.12em; color:var(--t-dim);
+  margin:0 6px 4px; }
+.srow { display:flex; align-items:center; height:36px; padding:0 6px; border-top:1px solid var(--hairline); }
+.srow:first-of-type { border-top:none; }
+.srow .lbl { flex:1; font-size:12.5px; color:var(--t-2); min-width:0; }
+.srow .lbl .help { margin-left:6px; }
+.srow .ctl { display:flex; align-items:center; flex-shrink:0; gap:6px; }
+.sel, .num { background:var(--card-hover); color:var(--t-strong); border:1px solid var(--border);
+  border-radius:5px; height:24px; padding:0 8px; font-size:12px; font-family:inherit; }
+.sel { width:190px; }
+.num { width:64px; }
+.slider { width:150px; accent-color:var(--accent); }
+.note { font-size:11.5px; color:var(--t-muted); margin:2px 6px 4px; }
+
+.dline { font-size:12.5px; padding:1px 0; }
+.dline .k { color:var(--accent); display:inline-block; width:140px; }
+
+table.rows { width:100%; border-collapse:collapse; font-size:12.5px; }
+table.rows th { text-align:left; font-weight:500; color:var(--t-dim); font-size:10.5px;
+  text-transform:uppercase; letter-spacing:.08em; padding:4px 6px; border-bottom:1px solid var(--hairline); }
+table.rows td { padding:5px 6px; color:var(--t-2); border-bottom:1px solid var(--hairline); }
+table.rows td.good { color:var(--green); }
+table.rows td.warn { color:var(--yellow); }
+table.rows td.r { text-align:right; }
+
+.footer { display:flex; align-items:center; gap:10px; margin-top:12px; }
+.footer .status { font-size:12px; color:var(--t-muted); }
+</style>
+</head>
+<body>
+<div class="window">
+  <aside class="sidebar">
+    <div class="navgroup">Crafting</div>
+    <div class="navrow active" data-page="queue"><span class="ico">◈</span>Queue<span class="badge">5</span></div>
+    <div class="navgroup">Sourcing</div>
+    <div class="navrow" data-page="buy"><span class="ico">⇄</span>Buy List<span class="badge">3</span></div>
+    <div class="navrow" data-page="gather"><span class="ico">⛏</span>Gather List<span class="badge">2</span></div>
+    <div class="navgroup">System</div>
+    <div class="navrow" data-page="settings"><span class="ico">⚙</span>Settings</div>
+    <div class="navrow" data-page="debug"><span class="ico">▤</span>Debug</div>
+  </aside>
+
+  <div class="main">
+    <div class="header">
+      <span class="ember" style="left:8%;  width:3px;height:3px; --d:5.5s; --dl:0s;   --dx:16px"></span>
+      <span class="ember" style="left:16%; width:2px;height:2px; --d:6.2s; --dl:1.2s; --dx:-12px"></span>
+      <span class="ember" style="left:30%; width:3px;height:3px; --d:4.8s; --dl:2.4s; --dx:20px"></span>
+      <span class="ember" style="left:52%; width:2px;height:2px; --d:7.0s; --dl:.6s;  --dx:-18px"></span>
+      <span class="ember" style="left:74%; width:3px;height:3px; --d:5.2s; --dl:3.0s; --dx:10px"></span>
+      <div class="brand">
+        <div class="top">
+          <svg class="mark flame" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <defs>
+              <linearGradient id="flameG" x1="0" y1="1" x2="0" y2="0">
+                <stop offset="0" stop-color="#C23A1B"/><stop offset=".45" stop-color="#E8742A"/><stop offset="1" stop-color="#F2C14E"/>
+              </linearGradient>
+            </defs>
+            <path d="M12 2.2c.9 2.9 3 3.9 3 6.6 0 2.4-1.2 3.9-3 3.9s-3-1.5-3-3.9c0-1.6.8-2.9 1.7-3.9.3 1.2 1.1 2.1 2.1 2.7-.2-1.9-.5-3.6-.8-5.4z" fill="url(#flameG)"/>
+            <path d="M10.6 13.4c.4.9 1 1.5 1.9 1.9-1.9.5-3.3 1.3-3.3 3 0 1.6 1.2 2.6 2.8 2.6s2.8-1 2.8-2.6c0-1.7-1.4-2.5-3.3-3 .9-.4 1.5-1 1.9-1.9" fill="url(#flameG)" opacity=".9"/>
+          </svg>
+          <span class="wordmark">HEPHAESTUS</span>
+        </div>
+        <span class="subtitle">Forged in Fire</span>
+      </div>
+      <div class="right">
+        <span class="pill" id="statusPill"><span class="dot"></span>IDLE</span>
+        <span class="detail" id="headerDetail" style="font-size:11px;color:var(--t-dim)">Queue 5 · 11 / 31 crafted</span>
+      </div>
+      <div class="cog" title="Open settings">⚙</div>
+    </div>
+
+    <div class="content">
+
+      <!-- ================= QUEUE ================= -->
+      <section class="page active" id="page-queue">
+        <div class="pagehead">
+          <h1>Queue</h1>
+          <div class="sub">Works through the list unattended, changing job between items — a problem with one item flags it; a problem that needs you pauses the queue.</div>
+          <hr>
+        </div>
+
+        <div class="stats">
+          <div class="tile"><div class="label">In queue</div><div class="row"><div class="value">5</div><div class="sub">4 jobs</div></div></div>
+          <div class="tile"><div class="label">Crafted</div><div class="row"><div class="value">11 / 31</div><div class="sub">35%</div></div></div>
+          <div class="tile warn"><div class="label">Short</div><div class="row"><div class="value">2</div><div class="sub">needs sourcing</div></div></div>
+          <div class="tile"><div class="label">Current job</div><div class="row"><div class="value">GSM</div><div class="sub">Goldsmith</div></div></div>
+        </div>
+
+        <div class="sechead">Items</div>
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+          <span class="sub" id="queueStatus" style="color:var(--green);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Idle — press Start to work through the list.</span>
+          <button class="btn" id="startBtn">Start</button>
+          <button class="btn ghost" id="keepOrderBtn">Keep order ✓</button>
+          <button class="btn ghost small">Reset progress</button>
+        </div>
+
+        <div class="qcard current" id="card-0">
+          <div class="stripe"></div>
+          <div class="acts">
+            <button class="btn ghost small">▲</button><button class="btn ghost small">▼</button><button class="btn ghost small">✕</button>
+          </div>
+          <div class="topline"><span class="name" style="color:var(--accent)">&gt; Classical Shield</span></div>
+          <div class="qprog"><div class="bar"><div class="fill" style="width:50%"></div></div><span class="txt">3 / 6</span></div>
+          <div class="mats">mats for 6 — sub-crafts included</div>
+        </div>
+
+        <div class="qcard done" id="card-1">
+          <div class="stripe"></div>
+          <div class="acts">
+            <button class="btn ghost small">▲</button><button class="btn ghost small">▼</button><button class="btn ghost small">✕</button>
+          </div>
+          <div class="topline"><span class="name">Darksteel Ingot</span></div>
+          <div class="qprog"><div class="bar"><div class="fill green" style="width:100%"></div></div><span class="txt">8 / 8</span></div>
+        </div>
+
+        <div class="qcard" id="card-2">
+          <div class="stripe"></div>
+          <div class="acts">
+            <button class="btn ghost small">▲</button><button class="btn ghost small">▼</button><button class="btn ghost small">✕</button>
+          </div>
+          <div class="topline"><span class="name">Grade 8 Tincture of Strength</span></div>
+          <div class="qprog"><div class="bar"><div class="fill" style="width:0%"></div></div><span class="txt">0 / 12</span></div>
+        </div>
+
+        <div class="qcard" id="card-3">
+          <div class="stripe"></div>
+          <div class="acts">
+            <button class="btn ghost small">▲</button><button class="btn ghost small">▼</button><button class="btn ghost small">✕</button>
+          </div>
+          <div class="topline"><span class="name">Rarefied Sykon Bavarois</span></div>
+          <div class="qprog"><div class="bar"><div class="fill" style="width:0%"></div></div><span class="txt">0 / 4</span></div>
+        </div>
+
+        <div class="qcard flagged" id="card-4">
+          <div class="stripe"></div>
+          <div class="acts">
+            <button class="btn ghost small">▲</button><button class="btn ghost small">▼</button><button class="btn ghost small">✕</button>
+          </div>
+          <div class="topline"><span class="name">Diadochos Coat of Casting</span></div>
+          <div class="flag">flagged: short — not craftable from your bags<span class="retry">Retry</span></div>
+          <div class="qprog"><div class="bar"><div class="fill" style="width:0%"></div></div><span class="txt">0 / 1</span></div>
+        </div>
+
+        <div class="sechead">Materials</div>
+        <div style="display:flex;gap:8px;margin-bottom:6px;">
+          <button class="btn ghost">Make buy list</button>
+          <button class="btn ghost">Make gather list</button>
+        </div>
+        <div class="sub">From the company chest (as last seen), taken before crafting:</div>
+        <div class="sub" style="color:var(--t-2)">&nbsp;&nbsp;60 × Dimythrite Ore — for Classical Shield &nbsp;<button class="btn small ghost">Take from chest now</button></div>
+        <div class="sub" style="margin-top:4px">From your retainers (as last seen), withdrawn before crafting:</div>
+        <div class="sub" style="color:var(--t-2)">&nbsp;&nbsp;24 × Ovim Wool — for Diadochos Coat of Casting &nbsp;<button class="btn small ghost">Withdraw now</button></div>
+        <div class="sub" style="margin-top:4px">Crafted first, automatically, from what is in your bags:</div>
+        <div class="sub" style="color:var(--t-2)">&nbsp;&nbsp;8 × Darksteel Ingot — for Classical Shield</div>
+        <div class="sub" style="margin-top:4px;color:var(--yellow)">Short — not in your bags and not craftable from them:</div>
+        <div class="sub" style="color:var(--t-2)">&nbsp;&nbsp;2 × Thavnairian Thread — for Diadochos Coat of Casting</div>
+        <div class="sub" style="color:var(--t-2)">&nbsp;&nbsp;1 × Immutable Solution — for Grade 8 Tincture</div>
+        <div class="muted" style="margin-top:4px">Automatic buying and gathering is off for this character: the queue makes what it can, then flags the entry. Make a buy or gather list to fetch the rest.</div>
+      </section>
+
+      <!-- ================= BUY LIST ================= -->
+      <section class="page" id="page-buy">
+        <div class="pagehead"><h1>Buy List</h1>
+          <div class="sub">A snapshot of what the queue needs that NPC vendors sell — Needed against what is in your bags.</div><hr></div>
+        <div class="sub">Made at 14:02 from the queue. <span class="muted">— </span><span class="retry" style="color:var(--accent);cursor:pointer">Refresh</span><span class="muted"> · </span><span class="retry" style="color:var(--accent);cursor:pointer">Clear</span></div>
+        <table class="rows" style="margin-top:8px">
+          <thead><tr><th>Item</th><th style="width:60px">Needed</th><th style="width:60px">In bags</th><th style="width:60px">Missing</th><th style="width:60px">Each</th><th style="width:80px;text-align:right">Cost</th></tr></thead>
+          <tbody>
+            <tr><td>Electrum Ore</td><td class="r">40</td><td class="r">12</td><td class="r warn">28</td><td class="r">58</td><td class="r">1,624</td></tr>
+            <tr><td>Growth Formula Zeta</td><td class="r">8</td><td class="r">0</td><td class="r warn">8</td><td class="r">612</td><td class="r">4,896</td></tr>
+            <tr><td>Holy Water</td><td class="r">4</td><td class="r good">4</td><td class="r good">0</td><td class="r">186</td><td class="r">0</td></tr>
+          </tbody>
+        </table>
+        <div class="footer">
+          <button class="btn">Auto purchase</button>
+          <span class="status">Still to buy: 6,520 gil. You hold 128,450.</span>
+        </div>
+      </section>
+
+      <!-- ================= GATHER LIST ================= -->
+      <section class="page" id="page-gather">
+        <div class="pagehead"><h1>Gather List</h1>
+          <div class="sub">What the queue needs that vendors do not cover, handed to Odysseus to gather.</div><hr></div>
+        <div class="sub">Made at 14:02 from the queue. <span class="retry" style="color:var(--accent);cursor:pointer">Refresh</span><span class="muted"> · </span><span class="retry" style="color:var(--accent);cursor:pointer">Clear</span></div>
+        <table class="rows" style="margin-top:8px">
+          <thead><tr><th>Item</th><th style="width:60px">Needed</th><th style="width:60px">In bags</th><th style="width:60px">Missing</th></tr></thead>
+          <tbody>
+            <tr><td>Palm Log</td><td class="r">30</td><td class="r">5</td><td class="r warn">25</td></tr>
+            <tr><td>Underground Spring Water</td><td class="r">12</td><td class="r">0</td><td class="r warn">12</td></tr>
+            <tr><td>Mountain Popoto</td><td class="r">8</td><td class="r good">8</td><td class="r good">0</td></tr>
+          </tbody>
+        </table>
+        <div class="footer">
+          <button class="btn ghost">Send to Odysseus</button>
+          <button class="btn">Auto gather</button>
+          <span class="status">Odysseus is loaded.</span>
+        </div>
+      </section>
+
+      <!-- ================= SETTINGS ================= -->
+      <section class="page" id="page-settings">
+        <div class="pagehead"><h1>Settings</h1>
+          <div class="sub">A global default, overridden per character. Per-box state lives in each character's queue, not here.</div><hr></div>
+
+        <div class="sgroup">
+          <div class="title">Execution mode</div>
+          <div class="srow"><span class="lbl">Global default</span><span class="ctl"><select class="sel"><option>Auto (plugin presses)</option><option>Assisted (you press)</option></select></span></div>
+          <div class="srow"><span class="lbl">This character<span class="help">(?)</span></span><span class="ctl"><select class="sel"><option>Follow global</option><option>Assisted (you press)</option><option>Auto (plugin presses)</option></select></span></div>
+        </div>
+
+        <div class="sgroup">
+          <div class="title">Queue</div>
+          <div class="srow"><span class="lbl">Retries after a failed craft<span class="help">(?)</span></span><span class="ctl"><input class="num" value="2"></span></div>
+          <div class="srow"><span class="lbl">Gear condition gate (%)<span class="help">(?)</span></span><span class="ctl"><input class="slider" type="range" min="1" max="99" value="30"><span style="font-size:12px;color:var(--t-2)">30</span></span></div>
+          <div class="srow"><span class="lbl">Craft missing intermediates automatically (sub-crafts)<span class="help">(?)</span></span><span class="ctl"><div class="tog on"><div class="knob"></div></div></span></div>
+          <div class="srow"><span class="lbl">Buy &amp; gather automatically (this character)<span class="help">(?)</span></span><span class="ctl"><select class="sel"><option>Follow account type</option><option>On</option><option>Off</option></select></span></div>
+          <div class="note">Now: off (paid account). The market board itself is never automated.</div>
+          <div class="srow"><span class="lbl">Right-click menu: "Add to Hephaestus Queue"<span class="help">(?)</span></span><span class="ctl"><div class="tog on"><div class="knob"></div></div></span></div>
+          <div class="srow" style="opacity:.5"><span class="lbl">Auto-repair</span><span class="ctl"><div class="tog"><div class="knob"></div></div></span></div>
+          <div class="srow" style="opacity:.5"><span class="lbl">Food / potion upkeep</span><span class="ctl"><div class="tog"><div class="knob"></div></div></span></div>
+          <div class="srow" style="opacity:.5"><span class="lbl">Materia extraction</span><span class="ctl"><div class="tog"><div class="knob"></div></div></span></div>
+          <div class="note">Not built yet — the queue pauses instead.</div>
+        </div>
+
+        <div class="sgroup">
+          <div class="title">Solver</div>
+          <div class="srow"><span class="lbl">Solve crafts (recommend, and press in Auto mode)<span class="help">(?)</span></span><span class="ctl"><div class="tog on"><div class="knob"></div></div></span></div>
+          <div class="srow"><span class="lbl">Assisted mode: highlight the action on my hotbars<span class="help">(?)</span></span><span class="ctl"><div class="tog on"><div class="knob"></div></div></span></div>
+          <div class="srow"><span class="lbl">Pre-solve the queue's recipes in the background<span class="help">(?)</span></span><span class="ctl"><div class="tog on"><div class="knob"></div></div></span></div>
+          <div class="srow"><span class="lbl">Raphael threads (0 = half the cores)<span class="help">(?)</span></span><span class="ctl"><input class="num" value="0"></span></div>
+          <div class="srow"><span class="lbl">Lookahead budget (ms)<span class="help">(?)</span></span><span class="ctl"><input class="slider" type="range" min="50" max="2000" value="400"><span style="font-size:12px;color:var(--t-2)">400</span></span></div>
+          <div class="srow"><span class="lbl">Lookahead max depth<span class="help">(?)</span></span><span class="ctl"><input class="slider" type="range" min="1" max="8" value="3"><span style="font-size:12px;color:var(--t-2)">3</span></span></div>
+          <div class="srow"><span class="lbl">Baseline deviation (%)<span class="help">(?)</span></span><span class="ctl"><input class="slider" type="range" min="5" max="100" value="20"><span style="font-size:12px;color:var(--t-2)">20</span></span></div>
+        </div>
+      </section>
+
+      <!-- ================= DEBUG ================= -->
+      <section class="page" id="page-debug">
+        <div class="pagehead"><h1>Debug</h1>
+          <div class="sub">Every service's Status string — what it is doing, or why it is idle. Names are scrambled.</div><hr></div>
+        <div class="dline"><span class="k">Character</span><span>…A3F2</span></div>
+        <div class="dline"><span class="k">Account</span><span>Paid</span></div>
+        <div class="dline"><span class="k">Mode</span><span>Auto</span></div>
+        <div class="dline"><span class="k">Material sources</span><span>bags &gt; FC chest &gt; retainers &gt; sub-craft &gt; vendor &gt; gathering</span></div>
+        <div class="dline"><span class="k">Queue</span><span>Idle — press Start to work through the list.</span></div>
+        <div class="dline"><span class="k">Solver</span><span>baseline cached for GSM</span></div>
+        <div class="dline"><span class="k">Raphael</span><span>raphael-cli 1.4.1 — available</span></div>
+        <div class="dline"><span class="k">Raphael warm-up</span><span>idle — nothing queued</span></div>
+        <div class="dline"><span class="k">Vendor trip</span><span>idle</span></div>
+        <div class="dline"><span class="k">Gathering (Odysseus)</span><span>idle</span></div>
+        <div class="dline"><span class="k">Vendor positions</span><span>ready (2,148 vendors)</span></div>
+        <div class="dline"><span class="k">Retainers</span><span>Charon store — 4 retainers, 3 known</span></div>
+        <div class="dline"><span class="k">Company chest</span><span>last seen 12:04</span></div>
+        <div class="dline"><span class="k">IPC</span><span>IsBusy, CraftItem, CraftList, AddToQueue, StartQueue, Stop, GetQueueStatusJson, GetVersion</span></div>
+        <div class="dline"><span class="k">Queue file</span><span>C:\…\CraftList\…A3F2.json</span></div>
+      </section>
+
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  // sidebar navigation
+  var rows = document.querySelectorAll('.navrow');
+  var pages = {};
+  document.querySelectorAll('.page').forEach(function (p) { pages[p.id.replace('page-', '')] = p; });
+  rows.forEach(function (row) {
+    row.addEventListener('click', function () {
+      rows.forEach(function (r) { r.classList.remove('active'); });
+      row.classList.add('active');
+      Object.keys(pages).forEach(function (k) { pages[k].classList.remove('active'); });
+      pages[row.getAttribute('data-page')].classList.add('active');
+    });
+  });
+
+  // toggle switches
+  document.querySelectorAll('.tog').forEach(function (t) {
+    t.addEventListener('click', function () { t.classList.toggle('on'); });
+  });
+
+  // start / stop
+  var running = false;
+  var startBtn = document.getElementById('startBtn');
+  var pill = document.getElementById('statusPill');
+  var qs = document.getElementById('queueStatus');
+  var detail = document.getElementById('headerDetail');
+  var card0 = document.getElementById('card-0');
+  var keep = document.getElementById('keepOrderBtn');
+  startBtn.addEventListener('click', function () {
+    running = !running;
+    if (running) {
+      startBtn.textContent = 'Stop';
+      startBtn.className = 'btn';
+      pill.className = 'pill green';
+      pill.innerHTML = '<span class="dot"></span>CRAFTING';
+      qs.textContent = 'Classical Shield — pressing actions (Auto)';
+      qs.style.color = 'var(--green)';
+      detail.textContent = 'Crafting · Classical Shield 3 / 6';
+      card0.classList.add('current');
+    } else {
+      startBtn.textContent = 'Start';
+      startBtn.className = 'btn';
+      pill.className = 'pill';
+      pill.innerHTML = '<span class="dot"></span>IDLE';
+      qs.textContent = 'Idle — press Start to work through the list.';
+      qs.style.color = 'var(--green)';
+      detail.textContent = 'Queue 5 · 11 / 31 crafted';
+      card0.classList.remove('current');
+    }
+  });
+  keep.addEventListener('click', function () {
+    var on = keep.textContent.indexOf('✓') >= 0;
+    keep.textContent = on ? 'Keep order' : 'Keep order ✓';
+  });
+})();
+</script>
+</body>
+</html>
