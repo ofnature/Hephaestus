@@ -9,7 +9,7 @@ public enum BaselineStatus
 {
     Alive,
 
-    /// <summary>Hard rule: its remaining steps, played from the real state, can no longer finish the craft.</summary>
+    /// <summary>Hard rule: its remaining steps, played from the real state and closed out by the finisher, can no longer finish the craft.</summary>
     CannotComplete,
 
     /// <summary>Soft rule: CP, durability or progress fell further behind its plan than the configured %.</summary>
@@ -36,24 +36,33 @@ public sealed class BaselineTracker
     private readonly CraftParameters _parameters;
     private readonly float _deviationPercent;
     private readonly List<CraftAction> _remaining;
-    private readonly List<CraftState> _plannedBefore; // the plan's state just before each remaining step
+    private readonly List<StepChange> _plannedChange; // what each remaining step did to the plan's own state
+
+    // Where the plan would stand after exactly the steps consumed so far: the soft rule's yardstick.
+    // Not "the plan's state before its first remaining step" — a front step that can no longer be
+    // used (Refined Touch once its Basic Touch was replaced) would freeze that at the plan's
+    // opening numbers, and every step after it, the plan's own included, would read as drift.
+    private CraftState _expected;
+
+    private readonly record struct StepChange(int Cp, int Durability, int Progress);
 
     public BaselineTracker(in CraftParameters parameters, IReadOnlyList<CraftAction> baseline, float deviationPercent)
     {
         _parameters = parameters;
         _deviationPercent = deviationPercent;
         _remaining = new List<CraftAction>(baseline.Count);
-        _plannedBefore = new List<CraftState>(baseline.Count);
+        _plannedChange = new List<StepChange>(baseline.Count);
 
         // The plan's own trajectory, under the all-Normal conditions it was solved for.
         var state = CraftSimulator.Initial(parameters);
+        _expected = state;
         foreach (var action in baseline)
         {
             if (CraftSimulator.Use(parameters, state, action, Condition.Normal, true, out var next) != ActionError.None)
                 continue; // a step the plan itself could not use is not part of the plan
 
             _remaining.Add(action);
-            _plannedBefore.Add(state);
+            _plannedChange.Add(new StepChange(next.Cp - state.Cp, next.Durability - state.Durability, next.Progress - state.Progress));
             state = next;
         }
     }
@@ -81,8 +90,12 @@ public sealed class BaselineTracker
         if (index < 0)
             return;
 
+        var change = _plannedChange[index];
+        _expected.Cp += change.Cp;
+        _expected.Durability += change.Durability;
+        _expected.Progress += change.Progress;
         _remaining.RemoveAt(index);
-        _plannedBefore.RemoveAt(index);
+        _plannedChange.RemoveAt(index);
     }
 
     /// <summary>
@@ -94,11 +107,10 @@ public sealed class BaselineTracker
         if (!Alive || _remaining.Count == 0)
             return Status;
 
-        if (AdverseDriftPercent(actual, _plannedBefore[0]) > _deviationPercent)
+        if (AdverseDriftPercent(actual, _expected) > _deviationPercent)
             return Status = BaselineStatus.Drifted;
 
-        var replayed = Replay(_parameters, actual, _remaining, 0UL, int.MaxValue, out _);
-        if (!CraftSimulator.IsSuccess(_parameters, replayed))
+        if (!CanStillFinish(_parameters, actual, _remaining, 0UL))
             return Status = BaselineStatus.CannotComplete;
 
         return Status;
@@ -111,6 +123,18 @@ public sealed class BaselineTracker
         var durability = (planned.Durability - actual.Durability) / (double)Math.Max(1, _parameters.MaxDurability);
         var progress = (planned.Progress - actual.Progress) / (double)Math.Max(1, _parameters.MaxProgress);
         return Math.Max(0, Math.Max(cp, Math.Max(durability, progress))) * 100.0;
+    }
+
+    /// <summary>
+    /// The hard rule: do the unconsumed steps, played from <paramref name="from"/> and closed out by
+    /// the <see cref="Finisher"/> exactly as the lookahead's leaves close them, still finish the
+    /// craft? (A plan a few CP short of its last Careful Synthesis still finishes on a Basic
+    /// Synthesis.) The lookahead asks it too, so it never counts on a plan the tracker would drop.
+    /// </summary>
+    internal static bool CanStillFinish(in CraftParameters parameters, in CraftState from, IReadOnlyList<CraftAction> remaining, ulong consumed)
+    {
+        var replayed = Replay(parameters, from, remaining, consumed, int.MaxValue, out _);
+        return CraftSimulator.IsSuccess(parameters, replayed) || CraftSimulator.IsSuccess(parameters, Finisher.Run(parameters, replayed, out _));
     }
 
     /// <summary>

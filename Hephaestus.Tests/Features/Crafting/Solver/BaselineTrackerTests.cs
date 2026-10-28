@@ -116,6 +116,28 @@ public class BaselineTrackerTests
         Assert.Null(tracker.Next);
     }
 
+    /// <summary>
+    /// The hard rule closes the plan out with the finisher, as the lookahead's leaves do: a plan a
+    /// few CP short of its final Careful Synthesis still finishes on a free Basic Synthesis.
+    /// </summary>
+    [Fact]
+    public void Assess_APlanTheFinisherCanStillCloseOut_StaysAlive()
+    {
+        var plan = BenchmarkRecipes.BlackStarUncappedPlan;
+        var tracker = new BaselineTracker(FullStats, plan, 100f); // soft rule out of the way
+        var state = CraftSimulator.Initial(FullStats);
+        foreach (var action in plan[..^1])
+        {
+            Assert.Equal(ActionError.None, CraftSimulator.Use(FullStats, state, action, Condition.Normal, true, out state));
+            tracker.Observe(action);
+        }
+
+        Assert.Equal(CarefulSynthesis, tracker.Next);
+        var shortOfCp = state with { Cp = 5, Progress = FullStats.MaxProgress - 400 }; // Careful costs 7
+
+        Assert.Equal(BaselineStatus.Alive, tracker.Assess(shortOfCp));
+    }
+
     /// <summary>Soft rule: far enough behind the plan's own numbers.</summary>
     [Fact]
     public void Assess_FarBehindOnCp_DropsItAsDrifted()
@@ -124,6 +146,32 @@ public class BaselineTrackerTests
         var state = AfterPlanSteps(FullStats, 6, tracker.Observe);
 
         Assert.Equal(BaselineStatus.Drifted, tracker.Assess(state with { Cp = state.Cp - 200 }));
+    }
+
+    /// <summary>
+    /// Precise Touch on a Good replaces the planned Basic Touch, which leaves the Refined Touch after
+    /// it unusable at the front of the plan for good. Following the rest of the plan from there is
+    /// not drift — the yardstick is the plan after the steps actually consumed, not the plan's state
+    /// before a step that will never come.
+    /// </summary>
+    [Fact]
+    public void Assess_AStuckFrontStep_DoesNotFreezeTheYardstick()
+    {
+        var tracker = Tracker();
+        var state = AfterPlanSteps(FullStats, 7, tracker.Observe);
+        foreach (var (action, condition) in new[]
+                 {
+                     (PreciseTouch, Condition.Good), (DelicateSynthesis, Condition.Normal), (Innovation, Condition.Normal),
+                     (PreparatoryTouch, Condition.Normal), (BasicTouch, Condition.Normal), (StandardTouch, Condition.Normal),
+                     (AdvancedTouch, Condition.Normal),
+                 })
+        {
+            Assert.Equal(ActionError.None, CraftSimulator.Use(FullStats, state, action, condition, true, out state));
+            tracker.Observe(action);
+        }
+
+        Assert.Equal(RefinedTouch, tracker.Next);
+        Assert.Equal(BaselineStatus.Alive, tracker.Assess(state));
     }
 
     [Fact]

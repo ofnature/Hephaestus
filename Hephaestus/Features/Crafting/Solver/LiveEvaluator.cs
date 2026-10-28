@@ -67,6 +67,9 @@ public sealed class LiveEvaluator
 {
     private static readonly CraftAction[] AllActions = Enum.GetValues<CraftAction>();
 
+    /// <summary>Every baseline step marked consumed: what a line looks like once its plan is dropped.</summary>
+    private const ulong AllConsumed = ulong.MaxValue;
+
     private readonly CraftParameters _parameters;
     private readonly EvaluatorSettings _settings;
     private readonly BaselineTracker _baseline;
@@ -174,6 +177,13 @@ public sealed class LiveEvaluator
     {
         if (depth == 0)
             return Leaf(state, consumed, steps);
+
+        // This node is a real decision to come, and before it the tracker judges the plan again.
+        // A line the plan cannot finish from has no plan left: treat it as dropped here, or the
+        // search would credit a repair two plies on that the hard rule never lets happen.
+        if (consumed != AllConsumed && _remaining.Length > 0
+            && !BaselineTracker.CanStillFinish(_parameters, state, _remaining, consumed))
+            consumed = AllConsumed;
 
         var best = double.NegativeInfinity;
         foreach (var action in AllActions)
