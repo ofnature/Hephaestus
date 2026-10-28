@@ -126,6 +126,32 @@ public class BaselineTrackerTests
         Assert.Equal(BaselineStatus.Drifted, tracker.Assess(state with { Cp = state.Cp - 200 }));
     }
 
+    /// <summary>
+    /// Precise Touch on a Good replaces the planned Basic Touch, which leaves the Refined Touch after
+    /// it unusable at the front of the plan for good. Following the rest of the plan from there is
+    /// not drift — the yardstick is the plan after the steps actually consumed, not the plan's state
+    /// before a step that will never come.
+    /// </summary>
+    [Fact]
+    public void Assess_AStuckFrontStep_DoesNotFreezeTheYardstick()
+    {
+        var tracker = Tracker();
+        var state = AfterPlanSteps(FullStats, 7, tracker.Observe);
+        foreach (var (action, condition) in new[]
+                 {
+                     (PreciseTouch, Condition.Good), (DelicateSynthesis, Condition.Normal), (Innovation, Condition.Normal),
+                     (PreparatoryTouch, Condition.Normal), (BasicTouch, Condition.Normal), (StandardTouch, Condition.Normal),
+                     (AdvancedTouch, Condition.Normal),
+                 })
+        {
+            Assert.Equal(ActionError.None, CraftSimulator.Use(FullStats, state, action, condition, true, out state));
+            tracker.Observe(action);
+        }
+
+        Assert.Equal(RefinedTouch, tracker.Next);
+        Assert.Equal(BaselineStatus.Alive, tracker.Assess(state));
+    }
+
     [Fact]
     public void BeingAheadOfThePlan_IsNotDrift()
     {
