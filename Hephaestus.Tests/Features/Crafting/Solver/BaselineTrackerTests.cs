@@ -116,6 +116,28 @@ public class BaselineTrackerTests
         Assert.Null(tracker.Next);
     }
 
+    /// <summary>
+    /// The hard rule closes the plan out with the finisher, as the lookahead's leaves do: a plan a
+    /// few CP short of its final Careful Synthesis still finishes on a free Basic Synthesis.
+    /// </summary>
+    [Fact]
+    public void Assess_APlanTheFinisherCanStillCloseOut_StaysAlive()
+    {
+        var plan = BenchmarkRecipes.BlackStarUncappedPlan;
+        var tracker = new BaselineTracker(FullStats, plan, 100f); // soft rule out of the way
+        var state = CraftSimulator.Initial(FullStats);
+        foreach (var action in plan[..^1])
+        {
+            Assert.Equal(ActionError.None, CraftSimulator.Use(FullStats, state, action, Condition.Normal, true, out state));
+            tracker.Observe(action);
+        }
+
+        Assert.Equal(CarefulSynthesis, tracker.Next);
+        var shortOfCp = state with { Cp = 5, Progress = FullStats.MaxProgress - 400 }; // Careful costs 7
+
+        Assert.Equal(BaselineStatus.Alive, tracker.Assess(shortOfCp));
+    }
+
     /// <summary>Soft rule: far enough behind the plan's own numbers.</summary>
     [Fact]
     public void Assess_FarBehindOnCp_DropsItAsDrifted()

@@ -9,7 +9,7 @@ public enum BaselineStatus
 {
     Alive,
 
-    /// <summary>Hard rule: its remaining steps, played from the real state, can no longer finish the craft.</summary>
+    /// <summary>Hard rule: its remaining steps, played from the real state and closed out by the finisher, can no longer finish the craft.</summary>
     CannotComplete,
 
     /// <summary>Soft rule: CP, durability or progress fell further behind its plan than the configured %.</summary>
@@ -126,11 +126,16 @@ public sealed class BaselineTracker
     }
 
     /// <summary>
-    /// The hard rule: do the unconsumed steps, played from <paramref name="from"/>, still finish the
-    /// craft? The lookahead asks it too, so it never counts on a plan the tracker would drop.
+    /// The hard rule: do the unconsumed steps, played from <paramref name="from"/> and closed out by
+    /// the <see cref="Finisher"/> exactly as the lookahead's leaves close them, still finish the
+    /// craft? (A plan a few CP short of its last Careful Synthesis still finishes on a Basic
+    /// Synthesis.) The lookahead asks it too, so it never counts on a plan the tracker would drop.
     /// </summary>
     internal static bool CanStillFinish(in CraftParameters parameters, in CraftState from, IReadOnlyList<CraftAction> remaining, ulong consumed)
-        => CraftSimulator.IsSuccess(parameters, Replay(parameters, from, remaining, consumed, int.MaxValue, out _));
+    {
+        var replayed = Replay(parameters, from, remaining, consumed, int.MaxValue, out _);
+        return CraftSimulator.IsSuccess(parameters, replayed) || CraftSimulator.IsSuccess(parameters, Finisher.Run(parameters, replayed, out _));
+    }
 
     /// <summary>
     /// Play the unconsumed steps in order under Normal condition, skipping any that cannot be used
