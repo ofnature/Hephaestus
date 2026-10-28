@@ -154,6 +154,31 @@ public class RaphaelVectorTests
     }
 
     /// <summary>
+    /// Maraging Steel Ingot at level 100 — checked in game on patch 7.1. The only in-game case with
+    /// Refined Touch, a Manipulation recast and Trained Perfection feeding a Preparatory Touch.
+    /// </summary>
+    [Fact]
+    public void Ingame_4866545e()
+    {
+        var parameters = Parameters(540, 35, 4125, 12000, 282, 256, 100);
+        var trace = Trace(parameters,
+            (Reflect, Condition.Normal), (Manipulation, Condition.Normal), (Innovation, Condition.Normal),
+            (BasicTouch, Condition.Normal), (RefinedTouch, Condition.Normal), (PrudentTouch, Condition.Normal),
+            (PrudentTouch, Condition.Normal), (Innovation, Condition.Normal), (BasicTouch, Condition.Normal),
+            (StandardTouch, Condition.Normal), (AdvancedTouch, Condition.Normal), (Manipulation, Condition.Normal),
+            (TrainedPerfection, Condition.Normal), (GreatStrides, Condition.Normal), (Innovation, Condition.Normal),
+            (PreparatoryTouch, Condition.Normal), (GreatStrides, Condition.Normal), (ByregotsBlessing, Condition.Normal));
+
+        Assert.Equal(
+            new[]
+            {
+                (0, 768), (0, 768), (0, 768), (0, 1228), (0, 1727), (0, 2303), (0, 2917), (0, 2917), (0, 3569),
+                (0, 4433), (0, 5527), (0, 5527), (0, 5527), (0, 5527), (0, 5527), (0, 8087), (0, 8087), (0, 11927),
+            },
+            trace);
+    }
+
+    /// <summary>
     /// Rarefied Tacos de Carne Asada at level 100. Raphael runs this one in its adversarial mode, so
     /// only its PROGRESS column is comparable — which still pins Trained Perfection, Immaculate Mend
     /// and Veneration'd Groundwork at the level cap.
@@ -169,14 +194,16 @@ public class RaphaelVectorTests
         Assert.Equal(0, state.Progress);
 
         var progress = new List<int>();
-        foreach (var action in new[] { Groundwork, Groundwork, Groundwork, Groundwork })
+        foreach (var action in new[] { Groundwork, Groundwork, Groundwork, Groundwork, Veneration, Groundwork })
         {
             Assert.Equal(ActionError.None, CraftSimulator.Use(parameters, state, action, Condition.Normal, true, out var next));
             state = next;
             progress.Add(state.Progress);
         }
 
-        Assert.Equal(new[] { 1409, 2818, 4227, 5636 }, progress);
+        // Raphael's last row reads 7045: it does not cap progress, we cap at the recipe total.
+        Assert.Equal(new[] { 1409, 2818, 4227, 5636, 5636, 6600 }, progress);
+        Assert.True(CraftSimulator.IsSuccess(parameters, state));
     }
 
     /// <summary>
@@ -202,6 +229,64 @@ public class RaphaelVectorTests
         Assert.True(CraftSimulator.IsSuccess(parameters, state));
     }
 
+    // ---- single-rule cases from raphael-sim's tests/action_tests.rs and tests/effect_tests.rs ----------
+
+    /// <summary>The settings those files share: level 100, round base values.</summary>
+    private static CraftParameters RuleSettings => Parameters(250, 60, 2000, 40000, 100, 100, 100);
+
+    /// <summary>test_groundwork: the half-potency rule looks at what Groundwork would really cost.</summary>
+    [Fact]
+    public void Groundwork_IsNotHalved_WhenWasteNotOrTrainedPerfectionMakeItFit()
+    {
+        var parameters = RuleSettings;
+        var start = CraftSimulator.Initial(parameters);
+
+        Assert.Equal(ActionError.None, CraftSimulator.Use(parameters, start with { Durability = 10, WasteNot = 1 }, Groundwork, Condition.Normal, true, out var wasteNot));
+        Assert.Equal((360, 0, 18), (wasteNot.Progress, wasteNot.Durability, parameters.MaxCp - wasteNot.Cp));
+
+        Assert.Equal(ActionError.None, CraftSimulator.Use(parameters, start with { Durability = 10, TrainedPerfectionActive = true }, Groundwork, Condition.Normal, true, out var perfection));
+        Assert.Equal((360, 10, 18), (perfection.Progress, perfection.Durability, parameters.MaxCp - perfection.Cp));
+    }
+
+    /// <summary>test_heart_and_soul / test_quick_innovation: instant actions break the touch combo but tick nothing.</summary>
+    [Fact]
+    public void HeartAndSoul_And_QuickInnovation_DropTheCombo_WithoutTicking()
+    {
+        var heartAndSoul = Play(RuleSettings, Manipulation, BasicTouch, HeartAndSoul);
+        Assert.Equal(Combo.None, heartAndSoul.Combo);
+        Assert.Equal(7, heartAndSoul.Manipulation);
+        Assert.False(heartAndSoul.HeartAndSoulAvailable);
+        Assert.True(heartAndSoul.HeartAndSoulActive);
+
+        Assert.True(Play(RuleSettings, HeartAndSoul, PrudentSynthesis, MasterMend).HeartAndSoulActive); // kept until a Good-only action
+
+        var quickInnovation = Play(RuleSettings, Manipulation, BasicTouch, QuickInnovation);
+        Assert.Equal(Combo.None, quickInnovation.Combo);
+        Assert.Equal(7, quickInnovation.Manipulation);
+        Assert.Equal(1, quickInnovation.Innovation);
+    }
+
+    /// <summary>effect_tests.rs test_expedience: it lapses on the next step, but an instant action is not a step.</summary>
+    [Fact]
+    public void Expedience_SurvivesHeartAndSoul_ButNotASynthesis()
+    {
+        var parameters = RuleSettings;
+        var start = CraftSimulator.Initial(parameters) with { Expedience = true };
+
+        Assert.Equal(ActionError.None, CraftSimulator.Use(parameters, start, BasicSynthesis, Condition.Normal, true, out var synthesis));
+        Assert.False(synthesis.Expedience);
+
+        Assert.Equal(ActionError.None, CraftSimulator.Use(parameters, start, HeartAndSoul, Condition.Normal, true, out var instant));
+        Assert.True(instant.Expedience);
+    }
+
+    /// <summary>effect_tests.rs test_synthesis_begin: "first step" counts steps, which instant actions do not take.</summary>
+    [Fact]
+    public void MuscleMemory_IsStillUsable_AfterQuickInnovationAndHeartAndSoul()
+    {
+        Assert.Equal(5, Play(RuleSettings, QuickInnovation, HeartAndSoul, MuscleMemory).MuscleMemory);
+    }
+
     /// <summary>The same two recipes' base values, recomputed from the stats Raphael quotes for them.</summary>
     [Fact]
     public void BaseValues_MatchTheStatsQuotedForClassicalIndex()
@@ -209,6 +294,23 @@ public class RaphaelVectorTests
         // Level 90 crafter on a level 90 recipe: divider 130 / modifier 80 (progress), 115 / 70 (quality).
         Assert.Equal(247, CraftParameters.ComputeBaseProgress(4000, 90, 90, 130, 80));
         Assert.Equal(265, CraftParameters.ComputeBaseQuality(3962, 90, 90, 115, 70));
+    }
+
+    /// <summary>
+    /// raphael-data's get_game_settings (and Artisan's Simulator.BaseQuality) work in single precision,
+    /// and on these stats that lands one point away from double precision — in both directions.
+    /// Level 100 recipes (rlvl 690-799: quality divider 150, modifier 75) and level 70 ones
+    /// (rlvl 320-380: 70 / 70). Expected values are the IEEE single-precision results of Raphael's
+    /// expression; the PR that added this shows the arithmetic.
+    /// </summary>
+    [Theory]
+    [InlineData(3515, 100, 150, 75, 201)] // double: 202
+    [InlineData(3535, 100, 150, 75, 203)] // double: 202
+    [InlineData(1555, 70, 70, 70, 180)] // double: 179
+    [InlineData(1565, 70, 70, 70, 180)] // double: 181
+    public void BaseQuality_IsComputedInSinglePrecision_LikeRaphael(int control, int level, int divider, int modifier, int expected)
+    {
+        Assert.Equal(expected, CraftParameters.ComputeBaseQuality(control, level, level, divider, modifier));
     }
 
     [Fact]
