@@ -97,8 +97,7 @@ public sealed class BaselineTracker
         if (AdverseDriftPercent(actual, _plannedBefore[0]) > _deviationPercent)
             return Status = BaselineStatus.Drifted;
 
-        var replayed = Replay(_parameters, actual, _remaining, 0UL, int.MaxValue, out _);
-        if (!CraftSimulator.IsSuccess(_parameters, replayed))
+        if (!CanStillFinish(_parameters, actual, _remaining, 0UL))
             return Status = BaselineStatus.CannotComplete;
 
         return Status;
@@ -112,6 +111,13 @@ public sealed class BaselineTracker
         var progress = (planned.Progress - actual.Progress) / (double)Math.Max(1, _parameters.MaxProgress);
         return Math.Max(0, Math.Max(cp, Math.Max(durability, progress))) * 100.0;
     }
+
+    /// <summary>
+    /// The hard rule: do the unconsumed steps, played from <paramref name="from"/>, still finish the
+    /// craft? The lookahead asks it too, so it never counts on a plan the tracker would drop.
+    /// </summary>
+    internal static bool CanStillFinish(in CraftParameters parameters, in CraftState from, IReadOnlyList<CraftAction> remaining, ulong consumed)
+        => CraftSimulator.IsSuccess(parameters, Replay(parameters, from, remaining, consumed, int.MaxValue, out _));
 
     /// <summary>
     /// Play the unconsumed steps in order under Normal condition, skipping any that cannot be used

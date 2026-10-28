@@ -115,6 +115,35 @@ public class LiveEvaluatorTests
         Assert.Equal(RapidSynthesis, evaluator.Recommend(state, Condition.Normal).Action);
     }
 
+    /// <summary>
+    /// Benchmark seed 61 on raphael's other Black Star plan. Hasty Touch here would break the plan's
+    /// Basic → Standard → Advanced pricing and leave it a few CP short of its last synthesis; two
+    /// plies on, the search could repair that — but before then the tracker's hard rule drops the
+    /// plan, and with no plan to close out the leaves the craft ended 800 quality short. The
+    /// search now applies the same rule at its own decision nodes, so it keeps the combo.
+    /// </summary>
+    [Fact]
+    public void ItDoesNotCountOnARepairTheHardRuleWouldNotAllow()
+    {
+        var evaluator = new LiveEvaluator(FullStats, BenchmarkRecipes.BlackStarUncappedPlan, NormalRecipe, Depth2);
+        var state = CraftSimulator.Initial(FullStats);
+        foreach (var (action, condition) in new[]
+                 {
+                     (Reflect, Condition.Normal), (Innovation, Condition.Normal), (PrudentTouch, Condition.Normal),
+                     (PrudentTouch, Condition.Normal), (PreciseTouch, Condition.Good), (Manipulation, Condition.Normal),
+                     (HastyTouch, Condition.Good), (Innovation, Condition.Normal), (WasteNot2, Condition.Good),
+                 })
+        {
+            Assert.Equal(ActionError.None, CraftSimulator.Use(FullStats, state, action, condition, true, out state));
+            evaluator.Observe(action);
+        }
+
+        var recommendation = evaluator.Recommend(state, Condition.Normal);
+
+        Assert.Equal(BasicTouch, recommendation.Action);
+        Assert.Equal(BaselineStatus.Alive, recommendation.Baseline);
+    }
+
     [Fact]
     public void OnceTheQualityGoalIsMet_ItStopsSpendingOnQuality()
     {
