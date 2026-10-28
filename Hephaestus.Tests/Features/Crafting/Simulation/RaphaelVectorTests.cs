@@ -154,6 +154,31 @@ public class RaphaelVectorTests
     }
 
     /// <summary>
+    /// Maraging Steel Ingot at level 100 — checked in game on patch 7.1. The only in-game case with
+    /// Refined Touch, a Manipulation recast and Trained Perfection feeding a Preparatory Touch.
+    /// </summary>
+    [Fact]
+    public void Ingame_4866545e()
+    {
+        var parameters = Parameters(540, 35, 4125, 12000, 282, 256, 100);
+        var trace = Trace(parameters,
+            (Reflect, Condition.Normal), (Manipulation, Condition.Normal), (Innovation, Condition.Normal),
+            (BasicTouch, Condition.Normal), (RefinedTouch, Condition.Normal), (PrudentTouch, Condition.Normal),
+            (PrudentTouch, Condition.Normal), (Innovation, Condition.Normal), (BasicTouch, Condition.Normal),
+            (StandardTouch, Condition.Normal), (AdvancedTouch, Condition.Normal), (Manipulation, Condition.Normal),
+            (TrainedPerfection, Condition.Normal), (GreatStrides, Condition.Normal), (Innovation, Condition.Normal),
+            (PreparatoryTouch, Condition.Normal), (GreatStrides, Condition.Normal), (ByregotsBlessing, Condition.Normal));
+
+        Assert.Equal(
+            new[]
+            {
+                (0, 768), (0, 768), (0, 768), (0, 1228), (0, 1727), (0, 2303), (0, 2917), (0, 2917), (0, 3569),
+                (0, 4433), (0, 5527), (0, 5527), (0, 5527), (0, 5527), (0, 5527), (0, 8087), (0, 8087), (0, 11927),
+            },
+            trace);
+    }
+
+    /// <summary>
     /// Rarefied Tacos de Carne Asada at level 100. Raphael runs this one in its adversarial mode, so
     /// only its PROGRESS column is comparable — which still pins Trained Perfection, Immaculate Mend
     /// and Veneration'd Groundwork at the level cap.
@@ -169,14 +194,16 @@ public class RaphaelVectorTests
         Assert.Equal(0, state.Progress);
 
         var progress = new List<int>();
-        foreach (var action in new[] { Groundwork, Groundwork, Groundwork, Groundwork })
+        foreach (var action in new[] { Groundwork, Groundwork, Groundwork, Groundwork, Veneration, Groundwork })
         {
             Assert.Equal(ActionError.None, CraftSimulator.Use(parameters, state, action, Condition.Normal, true, out var next));
             state = next;
             progress.Add(state.Progress);
         }
 
-        Assert.Equal(new[] { 1409, 2818, 4227, 5636 }, progress);
+        // Raphael's last row reads 7045: it does not cap progress, we cap at the recipe total.
+        Assert.Equal(new[] { 1409, 2818, 4227, 5636, 5636, 6600 }, progress);
+        Assert.True(CraftSimulator.IsSuccess(parameters, state));
     }
 
     /// <summary>
