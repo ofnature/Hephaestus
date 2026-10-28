@@ -9,7 +9,7 @@ namespace Hephaestus.Windows;
 /// <summary>
 /// The Buy List and Gather List tabs (user, 2026-09-21): a snapshot of what the queue needs from one
 /// source — Needed against what is in the bags — so it can be fetched by hand, and at the bottom the
-/// buttons that fetch it: Auto purchase; or Send to Odysseus (hand over, no start) and Auto gather.
+/// buttons that fetch it: Auto purchase; or Send to Demeter (hand over, no start) and Auto gather.
 /// </summary>
 internal static class SupplyListTab
 {
@@ -23,7 +23,7 @@ internal static class SupplyListTab
         {
             ImGui.TextColored(HephaestusTheme.TextSecondary, buy
                 ? "No buy list yet. \"Make buy list\" on the Queue tab lists everything the queue needs that NPC vendors sell."
-                : "No gather list yet. \"Make gather list\" on the Queue tab lists what the queue needs that vendors do not cover and Odysseus can gather.");
+                : "No gather list yet. \"Make gather list\" on the Queue tab lists what the queue needs that vendors do not cover and Demeter can gather.");
             if (ImGui.Button($"Make {noun} list now"))
                 desk.Make(kind);
             return;
@@ -43,8 +43,8 @@ internal static class SupplyListTab
             return;
         }
 
-        if (!buy && !desk.OdysseusAvailable)
-            ImGui.TextColored(HephaestusTheme.StatusYellow, "Odysseus is not loaded (or too old): nothing can go to gathering, so it shows below as unobtainable.");
+        if (!buy && !desk.DemeterAvailable)
+            ImGui.TextColored(HephaestusTheme.StatusYellow, "Demeter is not loaded: nothing can go to gathering, so it shows below as unobtainable.");
 
         DrawLines(desk, list, buy);
         DrawUnobtainable(desk, list);
@@ -189,14 +189,14 @@ internal static class SupplyListTab
         }
 
         ImGui.BeginDisabled(!desk.CanSend);
-        if (ImGui.Button("Send to Odysseus", new Vector2(160f, 0f)))
-            desk.SendToOdysseus();
+        if (ImGui.Button("Send to Demeter", new Vector2(160f, 0f)))
+            desk.SendToDemeter();
         ImGui.EndDisabled();
         if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
         {
-            ImGui.SetTooltip(!desk.OdysseusAvailable ? "Odysseus is not loaded."
-                : !desk.CanHandOver ? "Odysseus cannot take a list without starting it yet (it needs a Gather.SetList gate — asked for in its repo).\nAuto gather works today."
-                : "Puts this list into Odysseus's gather window as the \"Hephaestus\" list, without starting it.");
+            ImGui.SetTooltip(!desk.DemeterAvailable ? "Demeter is not loaded."
+                : !desk.CanHandOver ? "This Demeter cannot take a list without starting it (no Gather.SetList gate).\nAuto gather works."
+                : "Puts this list into Demeter's gather window as the \"Hephaestus\" list, without starting it.");
         }
 
         ImGui.SameLine();
@@ -205,7 +205,7 @@ internal static class SupplyListTab
             desk.AutoGather();
         ImGui.EndDisabled();
         if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
-            ImGui.SetTooltip("Odysseus gathers everything still missing now, and stays where it ends.");
+            ImGui.SetTooltip("Demeter gathers everything still missing now, and stays where it ends.");
 
         ImGui.TextColored(HephaestusTheme.StatusGrey, desk.GatherStatus);
     }

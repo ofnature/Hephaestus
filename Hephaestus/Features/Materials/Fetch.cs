@@ -15,7 +15,7 @@ public enum FetchKind
     /// <summary>NPC vendors — <see cref="VendorTrip"/>. Never the market board.</summary>
     Buy,
 
-    /// <summary>Odysseus's gatherer, over its <c>Odysseus.Gather.*</c> gates.</summary>
+    /// <summary>Demeter's gatherer, over its <c>Demeter.Gather.*</c> gates (Odysseus's until 2026-10-22).</summary>
     Gather,
 }
 
@@ -41,7 +41,7 @@ public sealed record RetainerSupply(Func<uint, int> Held, Func<int> NeverIndexed
 /// <summary>Something to withdraw from retainers before crafting — exactly the live shortfall the bags do not cover.</summary>
 public sealed record PlannedWithdrawal(uint ItemId, string Name, int Quantity, IReadOnlyDictionary<Queue.CraftListItem, int> ByEntry);
 
-/// <summary>Odysseus as a source of materials: what this character could gather unattended.</summary>
+/// <summary>Demeter as a source of materials: what this character could gather unattended.</summary>
 public sealed record GatherSupply(Func<uint, bool> CanGather);
 
 /// <summary>Something to gather — whatever vendors could not cover, exactly the live shortfall.</summary>

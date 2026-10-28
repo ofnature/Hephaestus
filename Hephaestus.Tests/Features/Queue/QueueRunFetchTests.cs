@@ -125,7 +125,7 @@ public class QueueRunFetchTests
         var gather = Tick(queue, Obs());
         Assert.Equal(FetchKind.Gather, gather.Fetch!.Kind);
         Assert.Equal((Log, 3), (gather.Fetch.Items[0].ItemId, gather.Fetch.Items[0].Target));
-        Assert.Contains("Asking Odysseus to gather 3 × Maple Log", queue.Status);
+        Assert.Contains("Asking Demeter to gather 3 × Maple Log", queue.Status);
     }
 
     [Fact]

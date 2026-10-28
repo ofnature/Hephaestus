@@ -38,7 +38,7 @@ see through to the end; the Queue page shows that plan — with a priced vendor 
 whatever is still short — before you press Start. **Make buy list** / **Make gather list** turn
 that into the Buy List and Gather List pages (needed vs in your bags), fetched by hand or with
 **Auto purchase** (walks to NPC vendors, teleporting when none is near) and **Auto gather** (asks
-Odysseus). Per character, the queue can also do this by itself when it runs short — on by default
+Demeter). Per character, the queue can also do this by itself when it runs short — on by default
 for free-trial accounts, off for paid ones. The market board is never automated. On paid accounts
 the queue also draws on your company chest and your retainers: it learns what they hold (from
 Charon's store when that plugin is loaded, else from any chest or retainer you open), takes whole

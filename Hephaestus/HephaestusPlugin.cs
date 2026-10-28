@@ -54,7 +54,7 @@ public sealed class HephaestusPlugin : IDalamudPlugin
     private readonly WorkshopBuildStore _workshopStore;
     private readonly WorkshopBuildWindow _workshopWindow;
 
-    // Buying (NPC vendors) and gathering (Odysseus): the Buy/Gather List tabs, and the queue's own fetches.
+    // Buying (NPC vendors) and gathering (Demeter): the Buy/Gather List tabs, and the queue's own fetches.
     private readonly SupplyDesk _desk;
 
     // What this character's retainers hold, learned from any retainer that gets opened.
@@ -156,7 +156,7 @@ public sealed class HephaestusPlugin : IDalamudPlugin
         var chestTrip = new ChestTrip(chestWorld);
         _desk = new SupplyDesk(
             _materials, _characterQueue, () => _jobs.CurrentJob, vendors, () => _craftingLog.HeldInBags(GilItemId),
-            new OdysseusGatherClient(pluginInterface, log), trip, retainerTrip, _retainers,
+            new DemeterGatherClient(pluginInterface, log), trip, retainerTrip, _retainers,
             new CharonRetainerClient(pluginInterface, log), () => retainerWorld.Roster,
             chestTrip, new CharonChestClient(pluginInterface, log), chestWorld.HeldOnPage, chestWorld.PageLoaded,
             queueBusy: QueueOrRunActive,

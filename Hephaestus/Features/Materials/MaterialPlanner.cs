@@ -66,7 +66,7 @@ public sealed class MaterialPlan
     /// <summary>What to take from the character's retainers first; empty when the plan was made without them.</summary>
     public IReadOnlyList<PlannedWithdrawal> Withdrawals { get; }
 
-    /// <summary>What to ask Odysseus to gather; empty when the plan was made without it.</summary>
+    /// <summary>What to ask Demeter to gather; empty when the plan was made without it.</summary>
     public IReadOnlyList<PlannedGather> Gathers { get; }
 
     public IReadOnlyList<MaterialShortfall> Shortfalls { get; }
@@ -97,7 +97,7 @@ public sealed class MaterialPlan
 ///   - vendors (when the caller offers them as a source) come LAST: only for what cannot be
 ///     sub-crafted, NQ, exactly the shortfall, within the gil held, in list order — and under the
 ///     same safety rule, so gil is never spent towards a craft that cannot be finished either;
-///   - gathering (Odysseus) comes after vendors, for whatever they cannot cover (user, 2026-09-21:
+///   - gathering (Demeter) comes after vendors, for whatever they cannot cover (user, 2026-09-21:
 ///     "you can always gather it if you can't buy it"). No limit but the same safety rule;
 ///   - the FC chest (when offered) comes right after the bags, then the retainers — both BEFORE
 ///     sub-crafting (the source order for paid accounts): an ingot a

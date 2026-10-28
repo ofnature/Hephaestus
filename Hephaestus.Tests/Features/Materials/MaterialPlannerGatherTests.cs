@@ -3,7 +3,7 @@ using Hephaestus.Features.Queue;
 
 namespace Hephaestus.Tests.Features.Materials;
 
-/// <summary>Gathering (Odysseus) as the LAST source: "you can always gather it if you can't buy it" (user, 2026-09-21).</summary>
+/// <summary>Gathering (Demeter) as the LAST source: "you can always gather it if you can't buy it" (user, 2026-09-21).</summary>
 public class MaterialPlannerGatherTests
 {
     private const uint Blacksmith = 9;

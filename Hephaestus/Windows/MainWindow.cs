@@ -147,7 +147,7 @@ public sealed class MainWindow : Window
                     SupplyListTab.Draw(_desk, SupplyKind.Buy);
                     break;
                 case MainPage.GatherList:
-                    PageHeader("Gather List", "What the queue needs that vendors do not cover, handed to Odysseus to gather.");
+                    PageHeader("Gather List", "What the queue needs that vendors do not cover, handed to Demeter to gather.");
                     SupplyListTab.Draw(_desk, SupplyKind.Gather);
                     break;
                 case MainPage.Settings: DrawSettings(contentId); break;
@@ -672,7 +672,7 @@ public sealed class MainWindow : Window
             ImGui.BeginDisabled(contentId == 0);
             var chosen = contentId != 0 && _config.Characters.TryGetValue(contentId, out var character) ? character.AutoSourcing : null;
             var autoIndex = chosen switch { true => 1, false => 2, null => 0 };
-            queue.Row("Buy & gather automatically (this character)", "On: when the queue runs short it buys from NPC vendors by itself — walking, or teleporting when none is near — and asks Odysseus to gather what cannot be bought. Off: it flags what is short. The market board itself is never automated.", 170f, () =>
+            queue.Row("Buy & gather automatically (this character)", "On: when the queue runs short it buys from NPC vendors by itself — walking, or teleporting when none is near — and asks Demeter to gather what cannot be bought. Off: it flags what is short. The market board itself is never automated.", 170f, () =>
             {
                 ImGui.SetNextItemWidth(170f);
                 if (ImGui.Combo("##autoSourcing", ref autoIndex, AutoSourcingLabels, AutoSourcingLabels.Length))
@@ -778,7 +778,7 @@ public sealed class MainWindow : Window
         StatusLine("Raphael", _raphaelStatus());
         StatusLine("Raphael warm-up", _warmupStatus());
         StatusLine("Vendor trip", _desk.BuyStatus);
-        StatusLine("Gathering (Odysseus)", _desk.GatherStatus);
+        StatusLine("Gathering (Demeter)", _desk.GatherStatus);
         StatusLine("Vendor positions", _vendorLocations.Status);
         StatusLine("Retainers", _retainerStatus());
         StatusLine("Company chest", _desk.ChestSourceStatus);

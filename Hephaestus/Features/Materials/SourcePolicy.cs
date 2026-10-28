@@ -15,7 +15,7 @@ public enum MaterialSource
     /// <summary>NPC vendor. Buys only the live shortfall, never a replayed batch.</summary>
     VendorPurchase,
 
-    /// <summary>Odysseus gathers it — last: "you can always gather it if you can't buy it" (user, 2026-09-21).</summary>
+    /// <summary>Demeter gathers it — last: "you can always gather it if you can't buy it" (user, 2026-09-21).</summary>
     Gathering,
 }
 

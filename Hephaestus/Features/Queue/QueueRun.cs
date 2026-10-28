@@ -52,7 +52,7 @@ public enum QueueCommandKind
     /// <summary>Forget the last run, so a halted one does not linger as "resumable" after its item was skipped.</summary>
     ClearRun,
 
-    /// <summary>Go and get raw materials: buy them (<see cref="VendorTrip"/>) or have Odysseus gather them.</summary>
+    /// <summary>Go and get raw materials: buy them (<see cref="VendorTrip"/>) or have Demeter gather them.</summary>
     Fetch,
 }
 
@@ -103,7 +103,7 @@ public enum QueuePhase
 /// becomes a shortfall of the entries that wanted it.
 ///
 /// FETCHING (when outside sources are given): raw materials come FIRST, before any sub-craft —
-/// everything to buy (a vendor trip), then everything left to gather (Odysseus). The plugin runs the
+/// everything to buy (a vendor trip), then everything left to gather (Demeter). The plugin runs the
 /// fetch; the queue judges it only by re-reading the bags. An item that did not arrive is struck off
 /// that source until the queue is next started, so the next plan tries the next source (gathering
 /// after a failed purchase) or names it as short — never a loop. Bags full pauses the queue.
@@ -588,7 +588,7 @@ public sealed class QueueRun
             FetchKind.ChestWithdraw => request.Sweep ? $"Looking in the company chest for {names}" : $"Taking {names} from the company chest",
             FetchKind.Withdraw => request.Sweep ? $"Looking through unindexed retainers for {names}" : $"Withdrawing {names} from retainers",
             FetchKind.Buy => $"Buying {names}",
-            _ => $"Asking Odysseus to gather {names}",
+            _ => $"Asking Demeter to gather {names}",
         };
         return new QueueCommand(QueueCommandKind.Fetch, Fetch: request);
     }
@@ -606,7 +606,7 @@ public sealed class QueueRun
         {
             _sawFetchActive = true;
             if (obs.FetchStatus.Length > 0)
-                Status = fetch.Kind switch { FetchKind.ChestWithdraw => "Company chest: ", FetchKind.Withdraw => "Retainers: ", FetchKind.Buy => "Buying materials: ", _ => "Gathering (Odysseus): " } + obs.FetchStatus;
+                Status = fetch.Kind switch { FetchKind.ChestWithdraw => "Company chest: ", FetchKind.Withdraw => "Retainers: ", FetchKind.Buy => "Buying materials: ", _ => "Gathering (Demeter): " } + obs.FetchStatus;
             return QueueCommand.None;
         }
 
@@ -632,7 +632,7 @@ public sealed class QueueRun
                         FetchKind.ChestWithdraw => "the chest trip would not start",
                         FetchKind.Withdraw => "the retainer trip would not start",
                         FetchKind.Buy => "the vendor trip would not start",
-                        _ => "Odysseus would not start gathering it",
+                        _ => "Demeter would not start gathering it",
                     }
                 : obs.FetchNotes?.GetValueOrDefault(item.ItemId) is { Length: > 0 } note ? note
                 : obs.FetchStatus.Length > 0 ? obs.FetchStatus

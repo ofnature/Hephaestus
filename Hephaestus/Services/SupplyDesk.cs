@@ -11,10 +11,10 @@ namespace Hephaestus.Services;
 /// Buying and gathering (user, 2026-09-21): the Buy List and Gather List tabs' back end — lists made
 /// on request from the queue, bag counts kept current from inventory events, and the buttons each tab
 /// ends with (Auto purchase runs a <see cref="VendorTrip"/> for what is still missing; Auto gather asks
-/// Odysseus to gather it now; Send to Odysseus hands the list over without starting it) — and the
+/// Demeter to gather it now; Send to Demeter hands the list over without starting it) — and the
 /// queue's own fetches when this character has automatic sourcing on (free trials by default; a paid
 /// account may buy some things on the market board first and press the buttons). The same trip and
-/// the same Odysseus request serve both. NPC vendors only: the market board is never automated.
+/// the same Demeter request serve both. NPC vendors only: the market board is never automated.
 ///
 /// Nothing here scans the bags on a timer: <see cref="OnInventoryChanged"/> marks them stale and the
 /// next tick re-reads just the listed items.
@@ -26,7 +26,7 @@ public sealed class SupplyDesk
     private readonly Func<uint> _currentJob;
     private readonly VendorCatalog _vendors;
     private readonly Func<long> _gil;
-    private readonly OdysseusGatherClient _odysseus;
+    private readonly DemeterGatherClient _demeter;
     private readonly VendorTrip _trip;
     private readonly RetainerTrip _retainerTrip;
     private readonly CharacterRetainers _retainers;
@@ -49,7 +49,7 @@ public sealed class SupplyDesk
     /// <param name="queueBusy">The queue or a craft run has the character: nothing here may start.</param>
     public SupplyDesk(
         MaterialPlanner planner, CharacterQueue queue, Func<uint> currentJob, VendorCatalog vendors, Func<long> gil,
-        OdysseusGatherClient odysseus, VendorTrip trip, RetainerTrip retainerTrip, CharacterRetainers retainers, CharonRetainerClient charon,
+        DemeterGatherClient demeter, VendorTrip trip, RetainerTrip retainerTrip, CharacterRetainers retainers, CharonRetainerClient charon,
         Func<IReadOnlyList<RetainerSlot>> roster, ChestTrip chestTrip, CharonChestClient charonChest, Func<uint, int, int> chestHeldOnPage, Func<int, bool> chestPageLoaded,
         Func<bool> queueBusy, Func<bool> logOpen, Action closeLog, Func<uint, string> recipeName, Func<bool> freeTrial)
     {
@@ -58,7 +58,7 @@ public sealed class SupplyDesk
         _currentJob = currentJob;
         _vendors = vendors;
         _gil = gil;
-        _odysseus = odysseus;
+        _demeter = demeter;
         _trip = trip;
         _retainerTrip = retainerTrip;
         _retainers = retainers;
@@ -213,17 +213,17 @@ public sealed class SupplyDesk
 
     public IReadOnlyDictionary<uint, string> BuyNotes => _trip.Notes;
 
-    /// <summary>Odysseus is gathering our list right now.</summary>
-    public bool Gathering => _odysseus.Active;
+    /// <summary>Demeter is gathering our list right now.</summary>
+    public bool Gathering => _demeter.Active;
 
-    public string GatherStatus => _odysseus.Available ? _odysseus.Status : "Odysseus is not loaded, or too old to gather on request.";
+    public string GatherStatus => _demeter.Available ? _demeter.Status : "Demeter is not loaded.";
 
-    public IReadOnlyDictionary<uint, string> GatherNotes => _odysseus.Notes;
+    public IReadOnlyDictionary<uint, string> GatherNotes => _demeter.Notes;
 
-    public bool OdysseusAvailable => _odysseus.Available;
+    public bool DemeterAvailable => _demeter.Available;
 
-    /// <summary>Odysseus takes a list without starting it (its <c>Gather.SetList</c> gate exists).</summary>
-    public bool CanHandOver => _odysseus.CanHandOver;
+    /// <summary>Demeter takes a list without starting it (its <c>Gather.SetList</c> gate exists).</summary>
+    public bool CanHandOver => _demeter.CanHandOver;
 
     /// <summary>Something here or the queue has the character: the buttons that move it are off.</summary>
     public bool Busy => _queueBusy() || Buying || Gathering || Withdrawing || FetchingFromChest;
@@ -234,11 +234,11 @@ public sealed class SupplyDesk
         InventoryVersion++;
     }
 
-    /// <summary>What the queue may fetch on its own: vendors always, gathering when Odysseus is there.</summary>
+    /// <summary>What the queue may fetch on its own: vendors always, gathering when Demeter is there.</summary>
     public MaterialSources Sources()
-        => new(new VendorSupply(_vendors.PriceOf, _gil()), _odysseus.Available ? new GatherSupply(_odysseus.CanGather) : null, RetainerSupply(), ChestSupply());
+        => new(new VendorSupply(_vendors.PriceOf, _gil()), _demeter.Available ? new GatherSupply(_demeter.CanGather) : null, RetainerSupply(), ChestSupply());
 
-    /// <summary>The queue's own fetch: the trip or the Odysseus request the buttons use. The queue has closed the log already.</summary>
+    /// <summary>The queue's own fetch: the trip or the Demeter request the buttons use. The queue has closed the log already.</summary>
     public void StartForQueue(FetchRequest request)
     {
         _queueFetch = request.Kind;
@@ -254,22 +254,22 @@ public sealed class SupplyDesk
                 _trip.Start(request.Items, DateTime.UtcNow);
                 break;
             default:
-                _odysseus.Start(request.Items);
+                _demeter.Start(request.Items);
                 break;
         }
     }
 
     public bool QueueFetchActive
-        => _queueFetch switch { FetchKind.ChestWithdraw => FetchingFromChest, FetchKind.Withdraw => Withdrawing, FetchKind.Buy => _trip.Active, FetchKind.Gather => _odysseus.Active, _ => false };
+        => _queueFetch switch { FetchKind.ChestWithdraw => FetchingFromChest, FetchKind.Withdraw => Withdrawing, FetchKind.Buy => _trip.Active, FetchKind.Gather => _demeter.Active, _ => false };
 
     public bool QueueFetchNeedsPerson
-        => _queueFetch switch { FetchKind.ChestWithdraw => _chestTrip.NeedsPerson, FetchKind.Withdraw => _retainerTrip.NeedsPerson, FetchKind.Buy => _trip.NeedsPerson, FetchKind.Gather => _odysseus.NeedsPerson, _ => false };
+        => _queueFetch switch { FetchKind.ChestWithdraw => _chestTrip.NeedsPerson, FetchKind.Withdraw => _retainerTrip.NeedsPerson, FetchKind.Buy => _trip.NeedsPerson, FetchKind.Gather => _demeter.NeedsPerson, _ => false };
 
     public string QueueFetchStatus
-        => _queueFetch switch { FetchKind.ChestWithdraw => ChestStatus, FetchKind.Withdraw => WithdrawStatus, FetchKind.Buy => _trip.Status, FetchKind.Gather => _odysseus.Status, _ => string.Empty };
+        => _queueFetch switch { FetchKind.ChestWithdraw => ChestStatus, FetchKind.Withdraw => WithdrawStatus, FetchKind.Buy => _trip.Status, FetchKind.Gather => _demeter.Status, _ => string.Empty };
 
     public IReadOnlyDictionary<uint, string>? QueueFetchNotes
-        => _queueFetch switch { FetchKind.ChestWithdraw => _chestTrip.Notes, FetchKind.Withdraw => _retainerTrip.Notes, FetchKind.Buy => _trip.Notes, FetchKind.Gather => _odysseus.Notes, _ => null };
+        => _queueFetch switch { FetchKind.ChestWithdraw => _chestTrip.Notes, FetchKind.Withdraw => _retainerTrip.Notes, FetchKind.Buy => _trip.Notes, FetchKind.Gather => _demeter.Notes, _ => null };
 
     /// <summary>The Queue tab's button: withdraw what the plan says the retainers hold, now.</summary>
     public bool CanWithdraw(IReadOnlyList<PlannedWithdrawal> withdrawals) => withdrawals.Count > 0 && !Busy && RetainerSupply() != null;
@@ -346,7 +346,7 @@ public sealed class SupplyDesk
         _trip.Start(BuyList!.Outstanding(), DateTime.UtcNow);
     }
 
-    public bool CanAutoGather => GatherList is { AllDone: false } && !Busy && _odysseus.Available;
+    public bool CanAutoGather => GatherList is { AllDone: false } && !Busy && _demeter.Available;
 
     public void AutoGather()
     {
@@ -355,15 +355,15 @@ public sealed class SupplyDesk
 
         if (_logOpen())
             _closeLog();
-        _odysseus.Start(GatherList!.Outstanding());
+        _demeter.Start(GatherList!.Outstanding());
     }
 
-    public bool CanSend => GatherList is { AllDone: false } && _odysseus.Available && _odysseus.CanHandOver;
+    public bool CanSend => GatherList is { AllDone: false } && _demeter.Available && _demeter.CanHandOver;
 
-    public void SendToOdysseus()
+    public void SendToDemeter()
     {
         if (CanSend)
-            _odysseus.HandOver(GatherList!.Outstanding());
+            _demeter.HandOver(GatherList!.Outstanding());
     }
 
     public void StopAll()
@@ -371,7 +371,7 @@ public sealed class SupplyDesk
         _trip.Stop();
         _retainerTrip.Stop();
         _chestTrip.Stop();
-        _odysseus.Stop();
+        _demeter.Stop();
     }
 
     public void Tick(DateTime now)
@@ -379,7 +379,7 @@ public sealed class SupplyDesk
         _trip.Tick(now);
         _retainerTrip.Tick(now);
         _chestTrip.Tick(now);
-        _odysseus.Tick(now);
+        _demeter.Tick(now);
 
         // A trip of ours just opened retainers or the chest: Charon's store has moved on, so has what we cached of it.
         if (_retainerTripWasActive && !_retainerTrip.Active)

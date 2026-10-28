@@ -81,7 +81,7 @@ public sealed class HephaestusConfig : IPluginConfiguration
             : DefaultMode;
 
     /// <summary>
-    /// Does the queue buy (NPC vendors) and gather (Odysseus) on its own when it runs short? Per
+    /// Does the queue buy (NPC vendors) and gather (Demeter) on its own when it runs short? Per
     /// character; unset follows the account type, read live: a free trial has nothing else to use and
     /// is fully automated, a paid account may want to buy some things on the market board itself first
     /// (user, 2026-09-21) and uses the Buy/Gather List buttons. The market board is NEVER automated.
