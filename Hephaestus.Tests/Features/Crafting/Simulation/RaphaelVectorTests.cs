@@ -229,6 +229,64 @@ public class RaphaelVectorTests
         Assert.True(CraftSimulator.IsSuccess(parameters, state));
     }
 
+    // ---- single-rule cases from raphael-sim's tests/action_tests.rs and tests/effect_tests.rs ----------
+
+    /// <summary>The settings those files share: level 100, round base values.</summary>
+    private static CraftParameters RuleSettings => Parameters(250, 60, 2000, 40000, 100, 100, 100);
+
+    /// <summary>test_groundwork: the half-potency rule looks at what Groundwork would really cost.</summary>
+    [Fact]
+    public void Groundwork_IsNotHalved_WhenWasteNotOrTrainedPerfectionMakeItFit()
+    {
+        var parameters = RuleSettings;
+        var start = CraftSimulator.Initial(parameters);
+
+        Assert.Equal(ActionError.None, CraftSimulator.Use(parameters, start with { Durability = 10, WasteNot = 1 }, Groundwork, Condition.Normal, true, out var wasteNot));
+        Assert.Equal((360, 0, 18), (wasteNot.Progress, wasteNot.Durability, parameters.MaxCp - wasteNot.Cp));
+
+        Assert.Equal(ActionError.None, CraftSimulator.Use(parameters, start with { Durability = 10, TrainedPerfectionActive = true }, Groundwork, Condition.Normal, true, out var perfection));
+        Assert.Equal((360, 10, 18), (perfection.Progress, perfection.Durability, parameters.MaxCp - perfection.Cp));
+    }
+
+    /// <summary>test_heart_and_soul / test_quick_innovation: instant actions break the touch combo but tick nothing.</summary>
+    [Fact]
+    public void HeartAndSoul_And_QuickInnovation_DropTheCombo_WithoutTicking()
+    {
+        var heartAndSoul = Play(RuleSettings, Manipulation, BasicTouch, HeartAndSoul);
+        Assert.Equal(Combo.None, heartAndSoul.Combo);
+        Assert.Equal(7, heartAndSoul.Manipulation);
+        Assert.False(heartAndSoul.HeartAndSoulAvailable);
+        Assert.True(heartAndSoul.HeartAndSoulActive);
+
+        Assert.True(Play(RuleSettings, HeartAndSoul, PrudentSynthesis, MasterMend).HeartAndSoulActive); // kept until a Good-only action
+
+        var quickInnovation = Play(RuleSettings, Manipulation, BasicTouch, QuickInnovation);
+        Assert.Equal(Combo.None, quickInnovation.Combo);
+        Assert.Equal(7, quickInnovation.Manipulation);
+        Assert.Equal(1, quickInnovation.Innovation);
+    }
+
+    /// <summary>effect_tests.rs test_expedience: it lapses on the next step, but an instant action is not a step.</summary>
+    [Fact]
+    public void Expedience_SurvivesHeartAndSoul_ButNotASynthesis()
+    {
+        var parameters = RuleSettings;
+        var start = CraftSimulator.Initial(parameters) with { Expedience = true };
+
+        Assert.Equal(ActionError.None, CraftSimulator.Use(parameters, start, BasicSynthesis, Condition.Normal, true, out var synthesis));
+        Assert.False(synthesis.Expedience);
+
+        Assert.Equal(ActionError.None, CraftSimulator.Use(parameters, start, HeartAndSoul, Condition.Normal, true, out var instant));
+        Assert.True(instant.Expedience);
+    }
+
+    /// <summary>effect_tests.rs test_synthesis_begin: "first step" counts steps, which instant actions do not take.</summary>
+    [Fact]
+    public void MuscleMemory_IsStillUsable_AfterQuickInnovationAndHeartAndSoul()
+    {
+        Assert.Equal(5, Play(RuleSettings, QuickInnovation, HeartAndSoul, MuscleMemory).MuscleMemory);
+    }
+
     /// <summary>The same two recipes' base values, recomputed from the stats Raphael quotes for them.</summary>
     [Fact]
     public void BaseValues_MatchTheStatsQuotedForClassicalIndex()
