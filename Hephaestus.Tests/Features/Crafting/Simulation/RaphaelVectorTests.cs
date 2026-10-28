@@ -296,6 +296,23 @@ public class RaphaelVectorTests
         Assert.Equal(265, CraftParameters.ComputeBaseQuality(3962, 90, 90, 115, 70));
     }
 
+    /// <summary>
+    /// raphael-data's get_game_settings (and Artisan's Simulator.BaseQuality) work in single precision,
+    /// and on these stats that lands one point away from double precision — in both directions.
+    /// Level 100 recipes (rlvl 690-799: quality divider 150, modifier 75) and level 70 ones
+    /// (rlvl 320-380: 70 / 70). Expected values are the IEEE single-precision results of Raphael's
+    /// expression; the PR that added this shows the arithmetic.
+    /// </summary>
+    [Theory]
+    [InlineData(3515, 100, 150, 75, 201)] // double: 202
+    [InlineData(3535, 100, 150, 75, 203)] // double: 202
+    [InlineData(1555, 70, 70, 70, 180)] // double: 179
+    [InlineData(1565, 70, 70, 70, 180)] // double: 181
+    public void BaseQuality_IsComputedInSinglePrecision_LikeRaphael(int control, int level, int divider, int modifier, int expected)
+    {
+        Assert.Equal(expected, CraftParameters.ComputeBaseQuality(control, level, level, divider, modifier));
+    }
+
     [Fact]
     public void BaseValues_ModifierOnlyAppliesWhenNotAboveTheRecipeLevel()
     {

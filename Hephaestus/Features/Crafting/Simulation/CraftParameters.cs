@@ -24,22 +24,24 @@ public readonly record struct CraftParameters(
     /// <summary>
     /// Progress gained by a 100-potency action. The divider/modifier come from the recipe's
     /// RecipeLevelTable row; the modifier only applies when the crafter is not above the recipe's
-    /// job level. Same formula as Raphael and Artisan.
+    /// job level. Same formula as Raphael and Artisan — in single precision like both of them
+    /// (raphael-data get_game_settings, Artisan Simulator.BaseProgress): double rounds some stats
+    /// one point the other way.
     /// </summary>
     public static int ComputeBaseProgress(int craftsmanship, int jobLevel, int recipeJobLevel, int progressDivider, int progressModifier)
     {
-        var value = craftsmanship * 10.0 / progressDivider + 2.0;
+        var value = craftsmanship * 10f / progressDivider + 2f;
         if (jobLevel <= recipeJobLevel)
-            value = value * progressModifier / 100.0;
+            value = value * progressModifier / 100f;
         return (int)Math.Floor(value);
     }
 
     /// <summary>Quality gained by a 100-potency action at zero Inner Quiet, Normal condition.</summary>
     public static int ComputeBaseQuality(int control, int jobLevel, int recipeJobLevel, int qualityDivider, int qualityModifier)
     {
-        var value = control * 10.0 / qualityDivider + 35.0;
+        var value = control * 10f / qualityDivider + 35f;
         if (jobLevel <= recipeJobLevel)
-            value = value * qualityModifier / 100.0;
+            value = value * qualityModifier / 100f;
         return (int)Math.Floor(value);
     }
 }
