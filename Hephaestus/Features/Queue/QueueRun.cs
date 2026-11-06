@@ -168,6 +168,7 @@ public sealed class QueueRun
     private bool _leaveWhenDone;
     private string _doneStatus = string.Empty;
     private DateTime _freeSince;
+    private string? _stopAfterCraft; // the reason, once someone asked to stop after the craft in progress
 
     /// <param name="recipeInfo">Recipe lookup; null for a recipe the game does not know.</param>
     /// <param name="hasGearsetFor">Whether a gearset exists for a job. A missing gearset is a refusal, never an improvised gear swap.</param>
@@ -274,6 +275,18 @@ public sealed class QueueRun
         Leave($"Stopped{Where()} — {reason}", now);
     }
 
+    /// <summary>
+    /// Start nothing new: no next item, no job change, no fetch. The craft run in progress is left to end
+    /// (its owner tells it to stop after its synthesis) and the queue then pauses, resumable, instead of
+    /// choosing again; between crafts it pauses on the next tick. Already leaving: that finishes as it is.
+    /// A fresh start or resume forgets it.
+    /// </summary>
+    public void StopAfterCurrentCraft(string reason)
+    {
+        if (Active && Phase != QueuePhase.Leaving)
+            _stopAfterCraft = reason;
+    }
+
     /// <summary>Forget the list entirely (the character changed, or an IPC request is finished with).</summary>
     public void Clear()
     {
@@ -286,7 +299,19 @@ public sealed class QueueRun
         Status = "Idle — the queue has not been started.";
     }
 
-    public QueueCommand Tick(in QueueObservation obs, DateTime now) => Phase switch
+    public QueueCommand Tick(in QueueObservation obs, DateTime now)
+    {
+        // Asked to stop after the craft in progress: nothing is crafting now, so this is where to stop.
+        if (_stopAfterCraft is { } stopReason && Phase is QueuePhase.Selecting or QueuePhase.SwitchingJob or QueuePhase.Fetching)
+        {
+            Halt(stopReason);
+            return QueueCommand.None;
+        }
+
+        return TickPhase(obs, now);
+    }
+
+    private QueueCommand TickPhase(in QueueObservation obs, DateTime now) => Phase switch
     {
         QueuePhase.Selecting => TickSelecting(obs, now),
         QueuePhase.SwitchingJob => TickSwitching(obs, now),
@@ -314,6 +339,7 @@ public sealed class QueueRun
         _sweptChest = false;
         _fetches.Clear();
         _fetch = null;
+        _stopAfterCraft = null;
         Phase = QueuePhase.Selecting;
         Status = "Choosing the next item";
     }

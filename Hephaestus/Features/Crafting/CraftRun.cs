@@ -145,6 +145,7 @@ public sealed class CraftRun
     private int _lastProgress;
     private int _lastMaxProgress;
     private int _lastDurability;
+    private string? _stopAfterCraft; // the reason, once someone asked to stop after the synthesis in progress
 
     public CraftRunPhase Phase { get; private set; } = CraftRunPhase.Idle;
 
@@ -195,6 +196,17 @@ public sealed class CraftRun
     /// <summary>Stop now, at the player's request. The position is kept, so the run can be resumed.</summary>
     public void Halt(string reason) => Halt(CraftRunHalt.Stopped, reason);
 
+    /// <summary>
+    /// Stop once the synthesis in progress is over — never abandon one — and start no other. Halts as
+    /// <see cref="CraftRunHalt.Stopped"/> (resumable) the next time the run would prepare a craft; a run
+    /// whose last craft that was simply finishes. Idle: nothing to do. A fresh start or resume forgets it.
+    /// </summary>
+    public void StopAfterCraft(string reason)
+    {
+        if (Active)
+            _stopAfterCraft = reason;
+    }
+
     /// <summary>Stop now. The position is kept, so the run can be resumed.</summary>
     public void Halt(CraftRunHalt kind, string reason)
     {
@@ -237,6 +249,7 @@ public sealed class CraftRun
         _nextCommandAt = default;
         _failedStarts = 0;
         _consecutiveFailures = 0;
+        _stopAfterCraft = null;
         EnterPreparing();
     }
 
@@ -268,6 +281,13 @@ public sealed class CraftRun
             Status = Failed == 0
                 ? $"Done — crafted {Completed}."
                 : $"Done — crafted {Completed}, {Failed} failed along the way.";
+            return CraftRunCommand.None;
+        }
+
+        // Asked to stop after the craft that was in progress: this is the point the next one would begin.
+        if (_stopAfterCraft is { } stopReason)
+        {
+            Halt(CraftRunHalt.Stopped, stopReason);
             return CraftRunCommand.None;
         }
 

@@ -43,6 +43,7 @@ public sealed class MainWindow : Window
     private readonly Func<string> _raphaelStatus;
     private readonly Func<string> _warmupStatus;
     private readonly Func<string> _retainerStatus;
+    private readonly Func<string> _stopAfterRunStatus;
 
     private int _addRecipeId;
     private int _addQuantity = 1;
@@ -79,7 +80,8 @@ public sealed class MainWindow : Window
         Func<string> solverStatus,
         Func<string> raphaelStatus,
         Func<string> warmupStatus,
-        Action openWorkshop)
+        Action openWorkshop,
+        Func<string> stopAfterRunStatus)
         : base("Hephaestus##HephaestusMain")
     {
         _config = config;
@@ -100,6 +102,7 @@ public sealed class MainWindow : Window
         _raphaelStatus = raphaelStatus;
         _warmupStatus = warmupStatus;
         _retainerStatus = retainerStatus;
+        _stopAfterRunStatus = stopAfterRunStatus;
 
         _page = _config.LandingPage;
 
@@ -774,6 +777,7 @@ public sealed class MainWindow : Window
         StatusLine("Mode", _config.ModeFor(contentId).ToString());
         StatusLine("Material sources", string.Join(" > ", SourcePolicy.OrderFor(freeTrial)));
         StatusLine("Queue", _engine.Status);
+        StatusLine("Stop after run", _stopAfterRunStatus());
         StatusLine("Solver", _config.Solver.Enabled ? _solverStatus() : "off — switched off in Settings");
         StatusLine("Raphael", _raphaelStatus());
         StatusLine("Raphael warm-up", _warmupStatus());

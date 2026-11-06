@@ -9,9 +9,10 @@ namespace Hephaestus.Ipc;
 ///
 /// <para>
 /// <b><c>Hephaestus.IsBusy</c></b> → <c>bool</c> — true while Hephaestus is driving the character
-/// (the queue or a craft run). Same shape as <c>Theseus.IsBusy</c> (and Henchman.IsBusy /
-/// AutoDuty.IsStopped), so Daedalus's AutomationBusyBridge and any orchestrator can poll it with no
-/// new mechanism. Level-triggered: it reflects the truth right now rather than latching. If
+/// (the queue, between its items too, a craft run, a trip or gathering it asked Demeter for, a synthesis
+/// the solver is pressing in Auto) or still handing it back after <c>RequestStopAfterRun</c>. Same shape
+/// as <c>Theseus.IsBusy</c> (and Henchman.IsBusy / AutoDuty.IsStopped), so Daedalus's
+/// AutomationBusyBridge and any orchestrator can poll it with no new mechanism. Level-triggered: it reflects the truth right now rather than latching. If
 /// Hephaestus is unloaded mid-run the gate stops existing, which consumers read as idle.
 /// </para>
 ///
@@ -47,6 +48,12 @@ namespace Hephaestus.Ipc;
 ///
 /// <para>
 /// <b><c>Hephaestus.Stop</c></b> — stop whatever is running after the current action. Safe to call when idle.
+/// <b><c>Hephaestus.RequestStopAfterRun</c></b> → <c>bool</c> — for a plugin about to take the character
+/// elsewhere (Argus): finish the synthesis in progress (never abandoned), then start nothing more — no
+/// next craft, no next item, no auto-resume — and close the crafting log; <c>IsBusy</c> stays true until
+/// the character is out of the crafting stance. Trips (buying, retainers, chest, gathering) stop at once.
+/// True when it was busy and will stop (or already is stopping); false, and nothing changed, when idle.
+/// Idempotent. A paused queue or run stays resumable by hand; a fresh start clears the request.
 /// <b><c>Hephaestus.GetQueueStatusJson</c></b> → <c>string</c> — see <see cref="QueueStatusDto"/>; <c>"{}"</c> on any error, never a throw.
 /// <b><c>Hephaestus.GetVersion</c></b> → <c>string</c>.
 /// </para>
@@ -67,10 +74,11 @@ public sealed class HephaestusIpc : IDisposable
     public const string CraftListGate = "Hephaestus.CraftList";
     public const string AddToQueueGate = "Hephaestus.AddToQueue";
     public const string StartQueueGate = "Hephaestus.StartQueue";
+    public const string RequestStopAfterRunGate = "Hephaestus.RequestStopAfterRun";
 
     public static readonly string[] Gates =
     {
-        IsBusyGate, CraftItemGate, CraftListGate, AddToQueueGate, StartQueueGate, StopGate, GetQueueStatusJsonGate, GetVersionGate,
+        IsBusyGate, CraftItemGate, CraftListGate, AddToQueueGate, StartQueueGate, StopGate, RequestStopAfterRunGate, GetQueueStatusJsonGate, GetVersionGate,
     };
 
     private readonly ICallGateProvider<bool> _isBusy;
@@ -81,6 +89,7 @@ public sealed class HephaestusIpc : IDisposable
     private readonly ICallGateProvider<string, bool> _craftList;
     private readonly ICallGateProvider<string, bool> _addToQueue;
     private readonly ICallGateProvider<bool> _startQueue;
+    private readonly ICallGateProvider<bool> _requestStopAfterRun;
 
     /// <remarks>Every delegate is wrapped: an exception in ours must never surface inside another plugin.</remarks>
     public HephaestusIpc(
@@ -91,7 +100,8 @@ public sealed class HephaestusIpc : IDisposable
         Func<string> queueStatusJson,
         Func<string, bool> craftList,
         Func<string, bool> addToQueue,
-        Func<bool> startQueue)
+        Func<bool> startQueue,
+        Func<bool> requestStopAfterRun)
     {
         _isBusy = pluginInterface.GetIpcProvider<bool>(IsBusyGate);
         _isBusy.RegisterFunc(() => Guard(isBusy, fallback: false)); // fail open to idle, as an absent gate reads
@@ -116,6 +126,9 @@ public sealed class HephaestusIpc : IDisposable
 
         _startQueue = pluginInterface.GetIpcProvider<bool>(StartQueueGate);
         _startQueue.RegisterFunc(() => Guard(startQueue, fallback: false));
+
+        _requestStopAfterRun = pluginInterface.GetIpcProvider<bool>(RequestStopAfterRunGate);
+        _requestStopAfterRun.RegisterFunc(() => Guard(requestStopAfterRun, fallback: false));
     }
 
     public void Dispose()
@@ -128,6 +141,7 @@ public sealed class HephaestusIpc : IDisposable
         _craftList.UnregisterFunc();
         _addToQueue.UnregisterFunc();
         _startQueue.UnregisterFunc();
+        _requestStopAfterRun.UnregisterFunc();
     }
 
     private static T Guard<T>(Func<T> call, T fallback)

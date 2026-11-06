@@ -73,6 +73,10 @@ public sealed class HephaestusPlugin : IDalamudPlugin
     private bool _externalRequest; // ...and that one-off is another plugin's (CraftItem / CraftList), not Craft All on another job
     private bool _queueWasActive;
 
+    // Hephaestus.RequestStopAfterRun: finish the synthesis in progress, start nothing more, leave the crafting stance.
+    private readonly StopAfterRun _stopAfterRun = new();
+    private const string StopAfterRunReason = "another plugin asked to stop after the craft in progress";
+
     // Outer loop: one recipe x N from the crafting log.
     private readonly CraftingLogGame _craftingLog;
     private readonly CraftRun _run = new();
@@ -214,7 +218,8 @@ public sealed class HephaestusPlugin : IDalamudPlugin
             () => _session.Status,
             () => raphael.Available ? raphael.Status : "raphael-cli not found next to the plugin — no baseline",
             () => _warmup?.Status ?? "off — raphael-cli not found",
-            () => _workshopWindow.IsOpen = true);
+            () => _workshopWindow.IsOpen = true,
+            () => _stopAfterRun.Status);
         _windowSystem.AddWindow(_mainWindow);
 
         // Settings are read when a run starts or resumes, so a change in the window applies to the next run.
@@ -236,8 +241,8 @@ public sealed class HephaestusPlugin : IDalamudPlugin
         _windowSystem.AddWindow(_assistOverlay);
 
         _ipc = new HephaestusIpc(
-            pluginInterface, () => _queue.Active || _run.Active || _desk.Buying || _desk.Withdrawing || _desk.FetchingFromChest, CraftItemForAnotherPlugin, StopForAnotherPlugin, QueueStatusJson,
-            CraftListForAnotherPlugin, AddToQueueForAnotherPlugin, StartQueueForAnotherPlugin);
+            pluginInterface, () => Busy, CraftItemForAnotherPlugin, StopForAnotherPlugin, QueueStatusJson,
+            CraftListForAnotherPlugin, AddToQueueForAnotherPlugin, StartQueueForAnotherPlugin, RequestStopAfterRun);
 
         _contextMenu = new QueueContextMenu(
             contextMenu, gameGui, _recipes,
@@ -289,6 +294,7 @@ public sealed class HephaestusPlugin : IDalamudPlugin
         try
         {
             _observation = _craftingLog.Observe(_run.RecipeId);
+            TickStopAfterRun(now); // before the queue and the run, so neither starts anything once asked
             TickQueue(now); // first, so a craft it starts begins this same frame
             _desk.Tick(now);
             TickRun(now);
@@ -492,6 +498,7 @@ public sealed class HephaestusPlugin : IDalamudPlugin
             _queue.Resume();
         else
             _queue.Start(_characterQueue.List, _characterQueue.Save);
+        _stopAfterRun.Cancel("the queue was started");
     }
 
     /// <summary>Stop the queue and whatever run it has going. Positions are kept; both can be resumed.</summary>
@@ -521,6 +528,51 @@ public sealed class HephaestusPlugin : IDalamudPlugin
         _desk.StopAll();
         _queue.HandBack("stopped by the plugin that asked.", DateTime.UtcNow);
     }
+
+    /// <summary>
+    /// Hephaestus.RequestStopAfterRun. Only takes the request: the next tick tells the queue and the run to
+    /// start nothing more and stops the trips, and the stop then closes the crafting log once our work has ended.
+    /// </summary>
+    private bool RequestStopAfterRun()
+    {
+        var pending = _stopAfterRun.Pending;
+        var accepted = _stopAfterRun.Request(Busy);
+        if (accepted && !pending)
+            _log.Information("Hephaestus: asked to stop after the run in progress ({0})", _queue.Active ? _queue.Status : _run.Status);
+        return accepted;
+    }
+
+    private void TickStopAfterRun(DateTime now)
+    {
+        if (!_stopAfterRun.Pending)
+            return;
+
+        switch (_stopAfterRun.Tick(new StopObservation(Working, _observation.LogOpen, _jobs.CanSwitch), now))
+        {
+            case StopCommand.StopWork:
+                _queue.StopAfterCurrentCraft(StopAfterRunReason);
+                _run.StopAfterCraft(StopAfterRunReason);
+                _desk.StopAll(); // a trip is not a craft: it stops where it is, as the Stop button stops it
+                break;
+            case StopCommand.CloseLog:
+                _craftingLog.CloseLog();
+                break;
+        }
+
+        if (!_stopAfterRun.Pending)
+            _log.Information("Hephaestus: {0}", _stopAfterRun.Status);
+    }
+
+    /// <summary>
+    /// Something of ours has the character, or will act on its own: the queue (between items too), a craft run,
+    /// a trip, gathering we asked Demeter for, or a synthesis the solver is pressing in Auto.
+    /// </summary>
+    private bool Working
+        => _queue.Active || _run.Active || _desk.Buying || _desk.Gathering || _desk.Withdrawing || _desk.FetchingFromChest
+           || (_session.Active && _config.ModeFor(_account.LocalContentId) == ExecutionMode.Auto);
+
+    /// <summary>Hephaestus.IsBusy: working, or still handing the character back after a stop-after-run.</summary>
+    private bool Busy => Working || _stopAfterRun.Pending;
 
     private bool QueueOrRunActive() => _queue.Active || _run.Active;
 
@@ -627,6 +679,7 @@ public sealed class HephaestusPlugin : IDalamudPlugin
         // Another plugin moves the character the moment IsBusy falls (Odysseus never closes the log itself):
         // its request ends with the crafting log closed. The player's own Craft All keeps the log, as the game's does.
         _queue.Start(request, persist: null, leaveWhenDone: external);
+        _stopAfterRun.Cancel("a new craft request was started");
         return true;
     }
 

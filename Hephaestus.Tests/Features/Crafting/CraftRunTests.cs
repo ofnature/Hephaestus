@@ -484,4 +484,63 @@ public class CraftRunTests
         Assert.NotNull(completed);
         Assert.False(completed.Value.Hq);
     }
+
+    // ---- stop after the craft in progress (Hephaestus.RequestStopAfterRun) -----------------------------------------
+
+    /// <summary>A craft is never abandoned: the one on screen is finished and counted, and no next one is begun.</summary>
+    [Fact]
+    public void StopAfterCraft_FinishesTheSynthesisInProgress_ThenHalts_WithoutStartingAnother()
+    {
+        var run = new CraftRun();
+        run.Start(Recipe, 3, Settings);
+        Assert.Equal(CraftRunCommand.PressSynthesize, Tick(run, ReadyInLog(0)));
+        Tick(run, Synthesizing(0, 40));
+
+        run.StopAfterCraft("asked to stop");
+
+        Assert.Equal(CraftRunCommand.None, Tick(run, Synthesizing(100, 10)));
+        Assert.True(run.Active);
+        Assert.Equal(CraftRunCommand.None, Tick(run, ReadyInLog(0) with { Transitioning = true }));
+        Assert.Equal(CraftRunCommand.None, Tick(run, ReadyInLog(1)));
+        Assert.Equal(1, run.Completed);
+        Assert.True(run.Active); // counted; the halt comes where the next craft would be prepared
+
+        Assert.Equal(CraftRunCommand.None, Tick(run, ReadyInLog(1)));
+        Assert.False(run.Active);
+        Assert.Equal(CraftRunHalt.Stopped, run.HaltKind);
+        Assert.Equal("asked to stop", run.HaltReason);
+        Assert.True(run.CanResume); // a person can carry on; nothing does by itself
+    }
+
+    [Fact]
+    public void StopAfterCraft_BetweenCrafts_HaltsBeforePressingAnything()
+    {
+        var run = new CraftRun();
+        run.Start(Recipe, 3, Settings);
+        CompleteOneCraft(run, before: 0);
+
+        run.StopAfterCraft("asked to stop");
+
+        Assert.Equal(CraftRunCommand.None, Tick(run, ReadyInLog(1)));
+        Assert.False(run.Active);
+        Assert.Equal(CraftRunHalt.Stopped, run.HaltKind);
+    }
+
+    /// <summary>No stale request: asked while idle it is dropped, and a fresh start or resume forgets one.</summary>
+    [Fact]
+    public void StopAfterCraft_WhenIdle_OrBeforeAFreshStart_StopsNothingLater()
+    {
+        var idle = new CraftRun();
+        idle.StopAfterCraft("asked to stop");
+        idle.Start(Recipe, 2, Settings);
+        Assert.Equal(CraftRunCommand.PressSynthesize, Tick(idle, ReadyInLog()));
+
+        var resumed = new CraftRun();
+        resumed.Start(Recipe, 2, Settings);
+        resumed.StopAfterCraft("asked to stop");
+        Tick(resumed, ReadyInLog());
+        Assert.False(resumed.Active);
+        resumed.Resume(Settings);
+        Assert.Equal(CraftRunCommand.PressSynthesize, Tick(resumed, ReadyInLog()));
+    }
 }

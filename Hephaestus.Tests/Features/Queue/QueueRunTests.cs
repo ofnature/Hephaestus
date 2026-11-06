@@ -618,4 +618,83 @@ public class QueueRunTests
         Assert.True(queue.Active);
         Assert.Equal(new QueueCommand(QueueCommandKind.StartCraft, RecipeId: 100, Count: 1), Tick(queue, Obs()));
     }
+
+    // ---- stop after the craft in progress (Hephaestus.RequestStopAfterRun) ---------------------------
+
+    /// <summary>The run in progress ends on its own terms and is recorded; then the queue pauses, resumable.</summary>
+    [Fact]
+    public void StopAfterCurrentCraft_LetsTheRunEnd_RecordsIt_ThenPauses()
+    {
+        var queue = Queue();
+        var list = List((100, 3), (200, 1));
+        queue.Start(list, null);
+        Tick(queue, Obs());
+        Tick(queue, Obs(runActive: true, runCompleted: 0));
+
+        queue.StopAfterCurrentCraft("asked to stop");
+
+        Assert.Equal(QueueCommandKind.None, Tick(queue, Obs(runActive: true, runCompleted: 1)).Kind);
+        Assert.True(queue.Active); // the synthesis is the run's to finish
+
+        var command = Tick(queue, Obs(runActive: false, runCompleted: 1, halt: CraftRunHalt.Stopped, runStatus: "Halted at 1 / 3 — asked to stop"));
+
+        Assert.Equal(QueueCommandKind.None, command.Kind);
+        Assert.False(queue.Active);
+        Assert.True(queue.CanResume);
+        Assert.Equal(1, list.Items[0].Crafted);
+    }
+
+    [Fact]
+    public void StopAfterCurrentCraft_WhenTheItemHadJustFinished_PausesInsteadOfStartingTheNext()
+    {
+        var queue = Queue();
+        queue.Start(List((100, 1), (101, 1)), null);
+        Tick(queue, Obs());
+        Tick(queue, Obs(runActive: true, runCompleted: 0));
+        queue.StopAfterCurrentCraft("asked to stop");
+        Tick(queue, Obs(runActive: true, runCompleted: 1));
+        Tick(queue, Obs(runActive: false, runCompleted: 1)); // the item is done: back to choosing
+
+        var command = Tick(queue, Obs());
+
+        Assert.Equal(QueueCommandKind.None, command.Kind);
+        Assert.False(queue.Active);
+        Assert.True(queue.CanResume);
+        Assert.Equal(1, queue.ItemsCompleted);
+        Assert.EndsWith("asked to stop", queue.Status);
+    }
+
+    /// <summary>Already closing the log for the caller: that finishes as it is.</summary>
+    [Fact]
+    public void StopAfterCurrentCraft_WhileLeaving_StillClosesTheLog()
+    {
+        var queue = Queue();
+        queue.Start(List((100, 1)), null, leaveWhenDone: true);
+        Tick(queue, Obs());
+        FinishCurrentItem(queue, Carpenter, 1);
+        Assert.Equal(QueueCommandKind.CloseLog, Tick(queue, Obs(logOpen: true, canSwitch: false)).Kind);
+
+        queue.StopAfterCurrentCraft("asked to stop");
+
+        Assert.Equal(QueueCommandKind.CloseLog, Tick(queue, Obs(logOpen: true, canSwitch: false)).Kind);
+        Assert.True(queue.Active);
+    }
+
+    /// <summary>No stale request: asked while idle it is dropped, and a fresh start forgets one.</summary>
+    [Fact]
+    public void StopAfterCurrentCraft_WhenIdle_OrBeforeAFreshStart_StopsNothingLater()
+    {
+        var queue = Queue();
+        queue.StopAfterCurrentCraft("asked to stop");
+        queue.Start(List((100, 2)), null);
+        Assert.Equal(QueueCommandKind.StartCraft, Tick(queue, Obs()).Kind);
+        Tick(queue, Obs(runActive: true));
+
+        queue.StopAfterCurrentCraft("asked to stop");
+        Tick(queue, Obs(runActive: false, halt: CraftRunHalt.Stopped, runStatus: "stopped"));
+        Assert.False(queue.Active);
+
+        queue.Resume();
+        Assert.Equal(QueueCommandKind.StartCraft, Tick(queue, Obs()).Kind);
+    }
 }

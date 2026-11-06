@@ -85,12 +85,13 @@ A build without it still succeeds; the plugin then reports the baseline solver a
 
 | IPC gate | Returns | Meaning |
 |---|---|---|
-| `Hephaestus.IsBusy` | `bool` | True while Hephaestus is driving the character (queue or craft run). |
+| `Hephaestus.IsBusy` | `bool` | True while Hephaestus is driving the character (queue, craft run, a trip or gathering it asked for, a synthesis it presses in Auto), or still handing it back after `RequestStopAfterRun`. |
 | `Hephaestus.CraftItem(uint recipeId, int amount)` | `bool` | Make `amount` of a recipe: changes job, solves, crafts, verifies. Same shape as `Artisan.CraftItem`. True = it began (`IsBusy` is already true); false = nothing started. |
 | `Hephaestus.CraftList(string json)` | `bool` | `CraftItem` for a whole list you build: `{ "keepOrder": true, "items": [ { "recipeId": 35499, "quantity": 12 }, { "itemId": 5057 } ] }`. Entries name a `recipeId` or an `itemId`; `quantity` defaults to 1, `keepOrder` to true. One-off and unsaved. All or nothing: one bad entry and nothing starts. |
 | `Hephaestus.AddToQueue(string json)` | `bool` | Same format, appended to the player's saved queue; nothing is started. |
 | `Hephaestus.StartQueue` | `bool` | Start or resume the player's saved queue. |
 | `Hephaestus.Stop` | — | Stop whatever is running. Safe when idle. |
+| `Hephaestus.RequestStopAfterRun` | `bool` | Finish the synthesis in progress, then start nothing more and close the crafting log; `IsBusy` falls once the character is out of the crafting stance. Trips stop at once. True = was busy and will stop (or already is); false = idle, nothing changed. Idempotent; a fresh start clears it. |
 | `Hephaestus.GetQueueStatusJson` | `string` | Active / canResume / status / current item / flagged items. `"{}"` on error. |
 | `Hephaestus.GetVersion` | `string` | Plugin version. |
 
