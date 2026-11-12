@@ -42,6 +42,21 @@ public static class CraftSimulator
         return rate < 100 && condition == Condition.Centered ? rate + 25 : rate;
     }
 
+    /// <summary>The same, knowing the state: nothing fails while Stellar Steady Hand is up.</summary>
+    public static int SuccessPercent(in CraftState state, CraftAction action, Condition condition)
+        => state.SteadyHand > 0 ? 100 : SuccessPercent(action, condition);
+
+    /// <summary>How long Material Miracle lasts once cast, in quarter-seconds (45 s).</summary>
+    public const byte MaterialMiracleQuarterSeconds = 180;
+
+    /// <summary>
+    /// How long the game keeps the crafter busy with an action, in quarter-seconds - an ESTIMATE (the one
+    /// Artisan uses: 2.5 s for anything that works on the item, 1.25 s for the rest). It is what wears
+    /// Material Miracle down, and what a timed Cosmic mission is counted in.
+    /// </summary>
+    public static int QuarterSeconds(CraftAction action)
+        => BaseDurabilityCost(action) > 0 || action is CraftAction.TrainedFinesse ? 10 : 5;
+
     /// <summary>Whether <paramref name="action"/> may be used right now, and if not, why.</summary>
     public static ActionError Check(in CraftParameters parameters, in CraftState state, CraftAction action, Condition condition)
     {
@@ -82,6 +97,12 @@ public static class CraftSimulator
                 => !state.QuickInnovationAvailable ? ActionError.NoRemainingUses
                     : state.Innovation != 0 ? ActionError.ConditionNotMet
                     : ActionError.None,
+            CraftAction.StellarSteadyHand
+                => state.SteadyHandCharges > 0 ? ActionError.None : ActionError.NoRemainingUses,
+            CraftAction.MaterialMiracle
+                => state.MaterialMiracleCharges == 0 ? ActionError.NoRemainingUses
+                    : state.MaterialMiracle != 0 ? ActionError.ConditionNotMet
+                    : ActionError.None,
             _ => ActionError.None,
         };
     }
@@ -103,8 +124,14 @@ public static class CraftSimulator
         if (error != ActionError.None)
             return error;
 
+        if (state.SteadyHand > 0)
+            success = true; // Stellar Steady Hand: whatever the dice said
+
         next.Cp -= CpCost(state, action, condition);
         next.Durability = Math.Max(0, state.Durability - DurabilityCost(state, action, condition));
+
+        // Material Miracle is on the clock: every action, final or not, takes its time off it.
+        next.MaterialMiracle = (byte)Math.Max(0, state.MaterialMiracle - QuarterSeconds(action));
 
         var progressGain = success ? ProgressGain(parameters, state, action, condition) : 0;
         var qualityGain = success ? QualityGain(parameters, state, action, condition) : 0;
@@ -197,6 +224,14 @@ public static class CraftSimulator
             case CraftAction.HeartAndSoul:
                 next.HeartAndSoulAvailable = false;
                 next.HeartAndSoulActive = true;
+                break;
+            case CraftAction.StellarSteadyHand:
+                next.SteadyHandCharges--;
+                next.SteadyHand = 3;
+                break;
+            case CraftAction.MaterialMiracle:
+                next.MaterialMiracleCharges--;
+                next.MaterialMiracle = MaterialMiracleQuarterSeconds;
                 break;
             case CraftAction.BasicTouch:
                 next.Combo = Combo.BasicTouch;
@@ -357,9 +392,9 @@ public static class CraftSimulator
         _ => 1,
     };
 
-    /// <summary>Heart and Soul and Quick Innovation are instant: no step, no buff ticks, no new condition.</summary>
+    /// <summary>Heart and Soul, Quick Innovation and Material Miracle are instant: no step, no buff ticks, no new condition.</summary>
     public static bool SpendsStep(CraftAction action)
-        => action is not (CraftAction.HeartAndSoul or CraftAction.QuickInnovation);
+        => action is not (CraftAction.HeartAndSoul or CraftAction.QuickInnovation or CraftAction.MaterialMiracle);
 
     private static int BaseDurabilityCost(CraftAction action) => action switch
     {
@@ -393,6 +428,7 @@ public static class CraftSimulator
         if (state.GreatStrides > 0) state.GreatStrides--;
         if (state.MuscleMemory > 0) state.MuscleMemory--;
         if (state.Manipulation > 0) state.Manipulation--;
+        if (state.SteadyHand > 0) state.SteadyHand--;
         state.Expedience = false;
     }
 }

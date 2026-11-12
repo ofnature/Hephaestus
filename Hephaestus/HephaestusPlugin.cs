@@ -10,6 +10,7 @@ using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using Hephaestus.Features.Crafting;
 using Hephaestus.Features.Crafting.Driving;
+using Hephaestus.Features.Crafting.Expert;
 using Hephaestus.Features.Crafting.Solver;
 using Hephaestus.Features.Materials;
 using Hephaestus.Features.Queue;
@@ -41,6 +42,8 @@ public sealed class HephaestusPlugin : IDalamudPlugin
     private readonly IGameInventory _inventory;
     private readonly INotificationManager _notifications;
     private readonly IPluginLog _log;
+    private readonly IChatGui _chat;
+    private readonly string _craftTimesDirectory;
 
     private readonly HephaestusConfig _config;
     private readonly WindowSystem _windowSystem = new("Hephaestus");
@@ -87,6 +90,8 @@ public sealed class HephaestusPlugin : IDalamudPlugin
     private readonly CraftActionExecutor _executor;
     private readonly CraftActionHook _actionHook;
     private readonly CraftSession _session;
+    private readonly ExpertTuningBook _expertTuning;
+    private readonly PlannerRunner _planner;
     private readonly CraftSetupReader _setupReader;
     private readonly MaterialPlanner _materials;
 
@@ -108,8 +113,11 @@ public sealed class HephaestusPlugin : IDalamudPlugin
         ITextureProvider textureProvider,
         IContextMenu contextMenu,
         INotificationManager notifications,
-        IPluginLog log)
+        IPluginLog log,
+        IChatGui chat)
     {
+        _chat = chat;
+        _craftTimesDirectory = System.IO.Path.Combine(pluginInterface.ConfigDirectory.FullName, "craft-times");
         _pluginInterface = pluginInterface;
         _commandManager = commandManager;
         _framework = framework;
@@ -179,33 +187,53 @@ public sealed class HephaestusPlugin : IDalamudPlugin
         var actions = new GameActionMap(dataManager);
         _synthesis = new SynthesisReader(gameGui, objectTable, condition);
         _executor = new CraftActionExecutor(objectTable, actions);
-        _setupReader = new CraftSetupReader(dataManager, objectTable, actions, _config);
+        _setupReader = new CraftSetupReader(dataManager, objectTable, actions, _config, BulkCrafting);
 
+        // One cache for both planners (their keys differ): two instances would race on the same file.
+        var baselineCache = new BaselineCache(configDirectory);
+        int RaphaelThreads() => _config.Solver.RaphaelThreads > 0 ? _config.Solver.RaphaelThreads : Math.Max(1, Environment.ProcessorCount / 2);
         var raphael = new RaphaelRunner(
             pluginInterface.AssemblyLocation.Directory?.FullName ?? string.Empty,
-            new BaselineCache(configDirectory),
-            () => _config.Solver.RaphaelThreads > 0 ? _config.Solver.RaphaelThreads : Math.Max(1, Environment.ProcessorCount / 2),
+            baselineCache,
+            RaphaelThreads,
             log);
-        if (!raphael.Available)
-            log.Warning("Hephaestus: raphael-cli was not found next to the plugin — crafting without a Raphael baseline");
+        if (!raphael.Available && _config.Solver.Planner == PlanSource.Raphael)
+            log.Warning("Hephaestus: raphael-cli was not found next to the plugin — our own planner plans the rotations instead");
 
+        // Rotations for ordinary recipes: our own planner unless Settings ask for Raphael (and it is there to ask).
+        _planner = new PlannerRunner(baselineCache, RaphaelThreads, message => log.Info("Hephaestus planner: {0}", message));
+        System.Threading.Tasks.Task<IReadOnlyList<Features.Crafting.Simulation.CraftAction>?> Plan(BaselineRequest request)
+            => _config.Solver.Planner == PlanSource.Raphael && raphael.Available ? raphael.SolveAsync(request) : _planner.SolveAsync(request);
+
+        // Expert recipes: the expert solver, tuned per recipe and stats on background threads the first time it is met.
+        _expertTuning = new ExpertTuningBook();
         _session = new CraftSession(
             _setupReader.Read,
-            raphael.Available ? raphael.SolveAsync : null,
+            Plan,
             () => new EvaluatorSettings
             {
                 MaxDepth = _config.Solver.LookaheadMaxDepth,
                 Budget = TimeSpan.FromMilliseconds(_config.Solver.LookaheadBudgetMs),
                 DeviationPercent = _config.Solver.BaselineDeviationPercent,
-            });
+            },
+            expert: problem => new ExpertAdvisor(
+                problem,
+                _expertTuning.For(problem, _config.Solver.ExpertTuning, threads: Math.Max(1, Environment.ProcessorCount / 4)),
+                _config.Solver.ExpertFutures > 0
+                    ? new SearchSettings(
+                        Samples: Math.Clamp(_config.Solver.ExpertFutures, 32, 512),
+                        Margin: problem.TimeValue > 0 ? 0.015 : 0.03,
+                        TimeValue: problem.TimeValue)
+                    : null,
+                TimeSpan.FromMilliseconds(_config.Solver.LookaheadBudgetMs),
+                seed: (ulong)DateTime.UtcNow.Ticks));
 
         _actionHook = new CraftActionHook(gameInterop, actions, log);
         _actionHook.ActionUsed += _session.OnActionUsed;
+        _session.SynthesisEnded += OnSynthesisEnded;
 
         // The live solve and the game come first: nothing is pre-solved while a synthesis is open.
-        _warmup = raphael.Available
-            ? new BaselineWarmup(raphael.SolveAsync, paused: () => !_config.Solver.PreSolveQueue || _session.Active)
-            : null;
+        _warmup = new BaselineWarmup(Plan, paused: () => !_config.Solver.PreSolveQueue || _session.Active);
 
         // ---- windows --------------------------------------------------------------------------------
         _mainWindow = new MainWindow(
@@ -216,10 +244,16 @@ public sealed class HephaestusPlugin : IDalamudPlugin
             () => _desk.RetainerSourceStatus(_retainerWatcher.Status),
             dataManager,
             () => _session.Status,
-            () => raphael.Available ? raphael.Status : "raphael-cli not found next to the plugin — no baseline",
+            () => _config.Solver.Planner != PlanSource.Raphael ? "not used — our own planner plans the rotations (Settings > Solver)"
+                : raphael.Available ? raphael.Status
+                : "raphael-cli not found next to the plugin — our own planner is used instead",
             () => _warmup?.Status ?? "off — raphael-cli not found",
             () => _workshopWindow.IsOpen = true,
-            () => _stopAfterRun.Status);
+            () => _stopAfterRun.Status,
+            () => !_config.Solver.ExpertSolver ? "off — switched off in Settings"
+                : _session.Expert ? $"at this craft — {_expertTuning.Status}"
+                : _expertTuning.Status,
+            () => _config.Solver.Planner == PlanSource.Own ? _planner.Status : "not used — Raphael plans the rotations (Settings > Solver)");
         _windowSystem.AddWindow(_mainWindow);
 
         // Settings are read when a run starts or resumes, so a change in the window applies to the next run.
@@ -281,6 +315,7 @@ public sealed class HephaestusPlugin : IDalamudPlugin
         _windowSystem.RemoveAllWindows();
 
         _actionHook.ActionUsed -= _session.OnActionUsed;
+        _session.SynthesisEnded -= OnSynthesisEnded;
         _actionHook.Dispose();
         _run.CraftCompleted -= OnCraftCompleted;
         _contextMenu.Dispose();
@@ -457,6 +492,17 @@ public sealed class HephaestusPlugin : IDalamudPlugin
         _craftAllOverlay.IsOpen = _observation.LogOpen;
     }
 
+    /// <summary>
+    /// Is the craft about to start one of many? Time decides in bulk crafting; a one-off is made quality first
+    /// (user, 2026-11-11). Asked once per craft, when its setup is read.
+    /// </summary>
+    private bool BulkCrafting() => _config.Solver.Intent switch
+    {
+        CraftIntent.Bulk => true,
+        CraftIntent.QualityFirst => false,
+        _ => _run.Active && _run.Requested - _run.Completed >= Math.Max(2, _config.Solver.BulkFrom),
+    };
+
     /// <summary>Inner loop: read the synthesis, let the session decide, press what it answers with (Auto only).</summary>
     private void TickSession(DateTime now)
     {
@@ -466,7 +512,7 @@ public sealed class HephaestusPlugin : IDalamudPlugin
         _actionHook.SetEnabled(snapshot != null);
 
         var auto = _config.ModeFor(_account.LocalContentId) == ExecutionMode.Auto;
-        if (_session.Tick(snapshot, _synthesis.Transitioning, auto, now) is { } action && !_executor.Use(action))
+        if (_session.Tick(snapshot, _synthesis.Transitioning, auto, now, _synthesis.MaterialMiracleSeconds) is { } action && !_executor.Use(action))
             _log.Debug("Hephaestus: the game refused {0}", action);
 
         _assistOverlay.IsOpen = _session.Active;
@@ -739,6 +785,35 @@ public sealed class HephaestusPlugin : IDalamudPlugin
         Announce($"Queued {build.PartName} — {build.Phases.Count} phases, {flat.Count} craft entries{tail}.", warning: false);
     }
 
+    /// <summary>
+    /// The craft-time log (the user, 2026-11-12: "a Hephaestus log that prints time for completed craft"): one line per
+    /// synthesis that ended, to the chat window, the plugin log, and <c>craft-times/{content id}.log</c> under the
+    /// config directory - a file per character, as every per-box file is. Never throws into the frame.
+    /// </summary>
+    private void OnSynthesisEnded(SynthesisRecord record)
+    {
+        try
+        {
+            var line = record.Describe(_craftingLog.RecipeName(record.RecipeId));
+            _chat.Print($"[Hephaestus] {line}");
+            _log.Info("Hephaestus craft: {0}", line);
+
+            var contentId = _account.LocalContentId;
+            if (contentId == 0)
+                return;
+
+            System.IO.Directory.CreateDirectory(_craftTimesDirectory);
+            System.IO.File.AppendAllText(
+                System.IO.Path.Combine(_craftTimesDirectory, $"{contentId:X16}.log"),
+                $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} | {line}{Environment.NewLine}");
+        }
+        catch (Exception ex)
+        {
+            _log.Debug("Hephaestus: the craft-time log could not be written: {0}", ex.Message);
+        }
+    }
+
+    /// <summary>A rated collectable is never "HQ": what is counted for it is whether it reached its top rating.</summary>
     private void OnCraftCompleted(uint recipeId, bool hq)
-        => _outcomes.Record(_account.LocalContentId, recipeId, hq);
+        => _outcomes.Record(_account.LocalContentId, recipeId, (_observation.CosmicLog || _run.InCosmicLog) && _session.LastTopRating is { } top ? top : hq);
 }

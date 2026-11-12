@@ -95,6 +95,13 @@ public sealed class GameActionMap
             if (IsCraftingJob(job) && actionNames.TryGetValue(row.Name.ExtractText(), out var action))
                 Add(job, action, row.RowId);
         }
+
+        // Cosmic Exploration's duty actions belong to no job (ClassJob -1): the one row serves all eight.
+        foreach (var duty in new[] { CraftAction.StellarSteadyHand, CraftAction.MaterialMiracle })
+        {
+            for (uint job = FirstCraftingJob; job <= LastCraftingJob; job++)
+                Add(job, duty, CarpenterActionIds.All[duty]);
+        }
     }
 
     private void Add(uint job, CraftAction action, uint id)

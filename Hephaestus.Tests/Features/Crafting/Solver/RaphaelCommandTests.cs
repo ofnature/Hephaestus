@@ -85,7 +85,7 @@ public class RaphaelCommandTests
 
     /// <summary>A rotation we cannot replay faithfully is worse than no baseline at all.</summary>
     [Theory]
-    [InlineData("\"[MuscleMemory, StellarSteadyHand, BasicSynthesis]\"")] // an action the simulator does not model
+    [InlineData("\"[MuscleMemory, StellarSteadyHand, BasicSynthesis]\"")] // a Cosmic duty action: modelled, but not one the plugin can press
     [InlineData("\"[MuscleMemory, 7, BasicSynthesis]\"")]                 // a number is not an action name
     [InlineData("error: the solver ran out of memory")]
     [InlineData("")]

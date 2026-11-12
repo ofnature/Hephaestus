@@ -47,6 +47,11 @@ public static class CarpenterActionIds
         [CraftAction.RapidSynthesis] = 100363,
         [CraftAction.HastyTouch] = 100355,
         [CraftAction.DaringTouch] = 100451,
+
+        // Cosmic Exploration duty actions: one row for every job, in the Action sheet. Listed so the
+        // enum stays whole; the plugin never recommends them yet (CraftSetupReader masks them).
+        [CraftAction.StellarSteadyHand] = 46843,
+        [CraftAction.MaterialMiracle] = 41269,
     };
 
     /// <summary>Ids from here up are rows of the CraftAction sheet (and use ActionType.CraftAction); below, the Action sheet.</summary>

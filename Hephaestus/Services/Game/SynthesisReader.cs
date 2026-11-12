@@ -1,5 +1,7 @@
+using System;
 using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Plugin.Services;
+using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.Game.UI;
 using FFXIVClientStructs.FFXIV.Component.GUI;
 using Hephaestus.Features.Crafting.Driving;
@@ -12,6 +14,12 @@ namespace Hephaestus.Services.Game;
 /// AtkValues, the player's CP, and the crafting buffs on the status list. Fail-open — anything
 /// missing means "no synthesis", and the session simply waits. Indices and status ids are the ones
 /// Artisan has field-verified (docs/artisan-notes.md).
+///
+/// Cosmic Exploration's duty action is read the way Artisan reads it: which action the mission lends
+/// and its uses left from <c>DutyActionManager</c> (two slots: ActionId / CurCharges), Stellar Steady
+/// Hand's steps left from its status' Param, Material Miracle's seconds from its status' remaining
+/// time. The two status ids are from the Status sheet (client 2026.11.03). NOT yet seen working in
+/// game by us - the Debug tab's Solver line says what was read.
 /// </summary>
 public sealed unsafe class SynthesisReader
 {
@@ -38,6 +46,12 @@ public sealed unsafe class SynthesisReader
     private const uint HeartAndSoul = 2665;
     private const uint Expedience = 3812;
     private const uint TrainedPerfection = 3813;
+    private const uint MaterialMiracle = 4220;
+    private const uint StellarSteadyHand = 4839;
+
+    // Action ids of the two duty actions (the Action sheet; the same row for every job).
+    private const uint StellarSteadyHandAction = 46843;
+    private const uint MaterialMiracleAction = 41269;
 
     private readonly IGameGui _gameGui;
     private readonly IObjectTable _objects;
@@ -49,6 +63,12 @@ public sealed unsafe class SynthesisReader
         _objects = objects;
         _condition = condition;
     }
+
+    /// <summary>
+    /// Seconds left on Material Miracle as of the last <see cref="Read"/>; 0 when it is not running. Kept out of
+    /// the snapshot on purpose: it changes every frame, and the session waits for a snapshot to stop changing.
+    /// </summary>
+    public float MaterialMiracleSeconds { get; private set; }
 
     /// <summary>An action is resolving, or the craft is starting/finishing — not a moment to read or act.</summary>
     public bool Transitioning => _condition[ConditionFlag.ExecutingCraftingAction];
@@ -78,6 +98,9 @@ public sealed unsafe class SynthesisReader
             var values = addon->AtkValues;
             int innerQuiet = 0, wasteNot = 0, innovation = 0, veneration = 0, greatStrides = 0, muscleMemory = 0, manipulation = 0;
             bool trainedPerfection = false, heartAndSoul = false, expedience = false;
+            var steadyHand = 0;
+            var miracle = false;
+            var miracleSeconds = 0f;
 
             foreach (var status in player.StatusList)
             {
@@ -93,8 +116,16 @@ public sealed unsafe class SynthesisReader
                     case TrainedPerfection: trainedPerfection = true; break;
                     case HeartAndSoul: heartAndSoul = true; break;
                     case Expedience: expedience = true; break;
+                    case StellarSteadyHand: steadyHand = Math.Max(1, (int)status.Param); break; // up = at least one sure step
+                    case MaterialMiracle:
+                        miracle = true;
+                        miracleSeconds = Math.Max(0f, status.RemainingTime);
+                        break;
                 }
             }
+
+            MaterialMiracleSeconds = miracle ? miracleSeconds : 0f;
+            var (dutyAction, dutyCharges) = ReadDutyAction();
 
             var condition = values[ConditionIndex].Int;
             return new SynthesisSnapshot(
@@ -118,12 +149,35 @@ public sealed unsafe class SynthesisReader
                 Manipulation: manipulation,
                 TrainedPerfectionActive: trainedPerfection,
                 HeartAndSoulActive: heartAndSoul,
-                Expedience: expedience);
+                Expedience: expedience,
+                SteadyHand: steadyHand,
+                MaterialMiracleActive: miracle,
+                DutyAction: dutyAction,
+                DutyCharges: dutyCharges);
         }
         catch
         {
             return null;
         }
+    }
+
+    /// <summary>The duty action a Cosmic mission lends this craft, and its uses left; (null, 0) outside such a mission.</summary>
+    private static (CraftAction? Action, int Charges) ReadDutyAction()
+    {
+        var duty = DutyActionManager.GetInstanceIfReady();
+        if (duty == null)
+            return (null, 0);
+
+        for (var slot = 0; slot < 2; slot++)
+        {
+            var id = duty->ActionId[slot];
+            if (id == StellarSteadyHandAction)
+                return (CraftAction.StellarSteadyHand, duty->CurCharges[slot]);
+            if (id == MaterialMiracleAction)
+                return (CraftAction.MaterialMiracle, duty->CurCharges[slot]);
+        }
+
+        return (null, 0);
     }
 
     private AtkUnitBase* Addon()

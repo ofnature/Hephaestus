@@ -55,6 +55,196 @@ public class CraftSessionTests
         return null;
     }
 
+    // ---- expert recipes --------------------------------------------------------------------------------
+
+    /// <summary>An advisor that records what it was asked and always answers with one action.</summary>
+    private sealed class FakeAdvisor : ICraftAdvisor
+    {
+        public readonly List<CraftAction> Observed = new();
+        public CraftState LastState;
+
+        public void Observe(CraftAction executed) => Observed.Add(executed);
+
+        public Recommendation Recommend(in CraftState state, Condition condition, ulong excluded = 0)
+        {
+            LastState = state;
+            return new Recommendation(Reflect, Array.Empty<CraftAction>(), 0, 0, BaselineStatus.Alive, true, "Expert solver: Reflect");
+        }
+    }
+
+    [Fact]
+    public void WhenTheSynthesisIsGone_TheSessionTellsHowItWent_AndHowLongItTook()
+    {
+        var session = Session();
+        var ended = new List<SynthesisRecord>();
+        session.SynthesisEnded += ended.Add;
+
+        Tick(session, Fresh());
+        var late = CraftSimulator.Initial(P) with { Progress = P.MaxProgress, Quality = 4321 };
+        Tick(session, Snapshot(late, stepIndex: 17), advanceSeconds: 40);
+        Assert.Empty(ended);
+
+        Tick(session, null, advanceSeconds: 2);
+
+        var record = Assert.Single(ended);
+        Assert.Equal(35000u, record.RecipeId);
+        Assert.Equal(42, record.Seconds, 3);
+        Assert.Equal(17, record.LastStep);
+        Assert.True(record.Finished);
+        Assert.Equal(4321, record.Quality);
+        Assert.Null(record.TopRating); // not a rated collectable
+        Assert.False(record.Expert);
+
+        Tick(session, null);
+        Assert.Single(ended); // told once
+    }
+
+    [Fact]
+    public void TheCraftTimeLine_ReadsLikeASentence()
+    {
+        var made = new SynthesisRecord(1, default, 53.4, 31, 7400, 7400, 26300, 26300, Expert: true, TopRating: true, FirstEstimate: 71.2);
+        Assert.Equal("Auxesian Biocoke: 53 s, step 31, quality 26,300 / 26,300 (100%, top rating), expert solver, first estimate 71 s", made.Describe("Auxesian Biocoke"));
+
+        var plain = new SynthesisRecord(1, default, 48, 20, 10040, 10040, 17491, 21200, Expert: false, TopRating: null, FirstEstimate: -1);
+        Assert.Equal("Partisan: 48 s, step 20, quality 17,491 / 21,200 (82%)", plain.Describe("Partisan"));
+
+        var quit = new SynthesisRecord(1, default, 12, 6, 3000, 7400, 500, 26300, Expert: true, TopRating: false, FirstEstimate: 70);
+        Assert.Equal("Auxesian Biocoke: NOT finished after 12 s — progress 3,000 / 7,400 at step 6", quit.Describe("Auxesian Biocoke"));
+    }
+
+    private static readonly Hephaestus.Features.Crafting.Expert.ExpertProblem ExpertItem =
+        new("an expert item", P, SolverFixtures.NormalRecipe, 0, P.MaxQuality, Duty: MaterialMiracle);
+
+    [Fact]
+    public void AnExpertRecipe_GoesToTheExpertSolver_WithoutWaitingForRaphael()
+    {
+        var solves = 0;
+        var advisor = new FakeAdvisor();
+        var session = new CraftSession(
+            _ => new CraftSetup(P, SolverFixtures.NormalRecipe, Request, ExpertItem),
+            _ =>
+            {
+                solves++;
+                return new TaskCompletionSource<IReadOnlyList<CraftAction>?>().Task; // would never finish
+            },
+            () => Settings, Inline, expert: _ => advisor);
+
+        Assert.Equal(Reflect, TickUntilPress(session, Fresh()));
+        Assert.Equal(0, solves);
+        Assert.True(session.Expert);
+        Assert.Contains("Expert solver", session.Status);
+    }
+
+    [Fact]
+    public void WithNoExpertSolverSeated_AnExpertRecipeIsSolvedLikeAnyOther()
+    {
+        var session = new CraftSession(
+            _ => new CraftSetup(P, SolverFixtures.NormalRecipe, Request, ExpertItem),
+            _ => Task.FromResult<IReadOnlyList<CraftAction>?>(SolverFixtures.Baseline), () => Settings, Inline);
+
+        Assert.Equal(MuscleMemory, TickUntilPress(session, Fresh()));
+        Assert.False(session.Expert);
+    }
+
+    [Fact]
+    public void TheMissionsDutyAction_ReachesTheSolverAsTheGameShowsIt()
+    {
+        var advisor = new FakeAdvisor();
+        var session = new CraftSession(
+            _ => new CraftSetup(P, SolverFixtures.NormalRecipe, Request, ExpertItem), null, () => Settings, Inline, expert: _ => advisor);
+
+        // Three uses of Material Miracle in stock, one running with 30 seconds left.
+        var snapshot = Fresh() with { DutyAction = MaterialMiracle, DutyCharges = 3, MaterialMiracleActive = true };
+        for (var i = 0; i < 6; i++)
+        {
+            _now = _now.AddSeconds(0.5);
+            session.Tick(snapshot, false, true, _now, miracleSeconds: 30f);
+        }
+
+        Assert.Equal(3, advisor.LastState.MaterialMiracleCharges);
+        Assert.Equal(0, advisor.LastState.SteadyHandCharges);
+        Assert.Equal(120, advisor.LastState.MaterialMiracle); // quarter-seconds
+        Assert.Equal(Combo.SynthesisBegin, advisor.LastState.Combo);
+
+        // Stellar Steady Hand: its stock and its sure steps.
+        var steady = Fresh() with { DutyAction = StellarSteadyHand, DutyCharges = 2, SteadyHand = 3 };
+        var state = session.ToState(steady);
+        Assert.Equal(2, state.SteadyHandCharges);
+        Assert.Equal(3, state.SteadyHand);
+        Assert.Equal(0, state.MaterialMiracleCharges);
+    }
+
+    [Fact]
+    public void MaterialMiracle_IsInstant_TheOpenerIsStillTheFirstStep()
+    {
+        var advisor = new FakeAdvisor();
+        var session = new CraftSession(
+            _ => new CraftSetup(P, SolverFixtures.NormalRecipe, Request, ExpertItem), null, () => Settings, Inline, expert: _ => advisor);
+
+        TickUntilPress(session, Fresh());
+        session.OnActionUsed(MaterialMiracle);
+
+        Assert.Equal(Combo.SynthesisBegin, session.ToState(Fresh()).Combo);
+    }
+
+    // ---- ordinary recipes no rotation carries --------------------------------------------------------------
+
+    /// <summary>An ordinary recipe as the expert solver would be given it, wanting <paramref name="target"/> quality.</summary>
+    private static CraftSession TightSession(int target, FakeAdvisor advisor, Func<BaselineRequest, Task<IReadOnlyList<CraftAction>?>>? solve)
+        => new(
+            _ => new CraftSetup(P, SolverFixtures.NormalRecipe, Request, Tight: new Hephaestus.Features.Crafting.Expert.ExpertProblem("an ordinary item", P, SolverFixtures.NormalRecipe, 0, target)),
+            solve, () => Settings, Inline, expert: _ => advisor);
+
+    private static readonly int BaselineQualityOnPaper = RotationPlayer.PlayNormal(P, SolverFixtures.Baseline).Quality;
+
+    [Fact]
+    public void ARotationThatReachesTheTargetOnPaper_IsFollowedByTheLiveEvaluator()
+    {
+        var advisor = new FakeAdvisor();
+        var session = TightSession(BaselineQualityOnPaper, advisor, _ => Task.FromResult<IReadOnlyList<CraftAction>?>(SolverFixtures.Baseline));
+
+        Assert.Equal(MuscleMemory, TickUntilPress(session, Fresh()));
+        Assert.False(session.Expert);
+        Assert.True(session.Current!.Value.FollowsBaseline);
+    }
+
+    [Fact]
+    public void ARotationThatFallsShortOnPaper_HandsTheCraftToTheExpertSolver()
+    {
+        var advisor = new FakeAdvisor();
+        var session = TightSession(BaselineQualityOnPaper + 1, advisor, _ => Task.FromResult<IReadOnlyList<CraftAction>?>(SolverFixtures.Baseline));
+
+        Assert.Equal(Reflect, TickUntilPress(session, Fresh()));
+        Assert.True(session.Expert);
+    }
+
+    [Fact]
+    public void WithNoRotationAtAll_TheExpertSolverMakesTheItem()
+    {
+        // The planner found nothing...
+        var none = TightSession(BaselineQualityOnPaper, new FakeAdvisor(), _ => Task.FromResult<IReadOnlyList<CraftAction>?>(null));
+        Assert.Equal(Reflect, TickUntilPress(none, Fresh()));
+        Assert.True(none.Expert);
+
+        // ...or the craft was joined part-way, where no rotation from the start means anything.
+        var joined = TightSession(BaselineQualityOnPaper, new FakeAdvisor(), _ => Task.FromResult<IReadOnlyList<CraftAction>?>(SolverFixtures.Baseline));
+        var midway = Snapshot(CraftSimulator.Initial(P) with { Progress = 500 }, stepIndex: 4);
+        Assert.Equal(Reflect, TickUntilPress(joined, midway));
+        Assert.True(joined.Expert);
+    }
+
+    [Fact]
+    public void WithoutATightSetup_AShortRotationIsFollowedAsItAlwaysWas()
+    {
+        // Raphael chosen in Settings: the setup names no expert problem for an ordinary recipe.
+        var session = new CraftSession(
+            _ => new CraftSetup(P, SolverFixtures.NormalRecipe, Request),
+            _ => Task.FromResult<IReadOnlyList<CraftAction>?>(new[] { MuscleMemory, CarefulSynthesis }), () => Settings, Inline, expert: _ => new FakeAdvisor());
+
+        Assert.NotNull(TickUntilPress(session, Fresh())); // the live evaluator, with a poor rotation to start from
+        Assert.False(session.Expert);
+    }
+
     [Fact]
     public void WithNoSynthesisOpen_ItIsIdle_AndSaysSo()
     {
@@ -105,13 +295,13 @@ public class CraftSessionTests
     }
 
     [Fact]
-    public void ItWaitsForRaphael_BeforeTheFirstAction()
+    public void ItWaitsForThePlanner_BeforeTheFirstAction()
     {
         var pending = new TaskCompletionSource<IReadOnlyList<CraftAction>?>();
         var session = Session(_ => pending.Task);
 
         Assert.Null(TickUntilPress(session, Fresh()));
-        Assert.Contains("Raphael", session.Status);
+        Assert.Contains("Planning the rotation", session.Status); // whoever plans it: ours, or raphael-cli
 
         pending.SetResult(SolverFixtures.Baseline);
         Assert.Equal(MuscleMemory, TickUntilPress(session, Fresh()));

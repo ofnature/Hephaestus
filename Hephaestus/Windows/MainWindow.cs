@@ -40,6 +40,9 @@ public sealed class MainWindow : Window
     private readonly VendorLocations _vendorLocations;
     private readonly IDataManager _data;
     private readonly Func<string> _solverStatus;
+    private readonly Func<string> _expertStatus;
+    private readonly Func<string> _plannerStatus;
+    private static readonly string[] IntentLabels = { "Auto", "Quality first", "Bulk (time matters)" };
     private readonly Func<string> _raphaelStatus;
     private readonly Func<string> _warmupStatus;
     private readonly Func<string> _retainerStatus;
@@ -81,7 +84,9 @@ public sealed class MainWindow : Window
         Func<string> raphaelStatus,
         Func<string> warmupStatus,
         Action openWorkshop,
-        Func<string> stopAfterRunStatus)
+        Func<string> stopAfterRunStatus,
+        Func<string> expertStatus,
+        Func<string> plannerStatus)
         : base("Hephaestus##HephaestusMain")
     {
         _config = config;
@@ -99,6 +104,8 @@ public sealed class MainWindow : Window
         _vendorLocations = vendorLocations;
         _data = data;
         _solverStatus = solverStatus;
+        _expertStatus = expertStatus;
+        _plannerStatus = plannerStatus;
         _raphaelStatus = raphaelStatus;
         _warmupStatus = warmupStatus;
         _retainerStatus = retainerStatus;
@@ -735,6 +742,41 @@ public sealed class MainWindow : Window
                 if (ImGui.InputInt("##threads", ref threads)) { _config.Solver.RaphaelThreads = Math.Clamp(threads, 0, 64); _saveConfig(); }
             });
 
+            var expertSolver = _config.Solver.ExpertSolver;
+            if (solver.Toggle("Expert recipes: use the expert solver", "Expert recipes are made by a solver that reacts to every condition and looks ahead over sampled futures, instead of following a Raphael plan. In Cosmic Exploration it also uses the mission's duty action. Off: expert recipes are solved like any other.", ref expertSolver))
+            {
+                _config.Solver.ExpertSolver = expertSolver;
+                _saveConfig();
+            }
+
+            var expertTuning = _config.Solver.ExpertTuning;
+            if (solver.Toggle("Expert recipes: tune for each recipe and my stats", "The first time an expert recipe is met, a second or two of simulated crafts on background threads finds the best settings for it at your stats. Off: presets only.", ref expertTuning))
+            {
+                _config.Solver.ExpertTuning = expertTuning;
+                _saveConfig();
+            }
+
+            var raphaelPlans = _config.Solver.Planner == PlanSource.Raphael;
+            if (solver.Toggle("Plan rotations with Raphael instead of our own planner", "Our own planner works inside the plugin: a few seconds the first time a recipe is met at your stats, then cached. With it, an item no rotation carries to full quality on paper is made by the expert solver. On: the bundled raphael-cli plans every ordinary recipe, as before.", ref raphaelPlans))
+            {
+                _config.Solver.Planner = raphaelPlans ? PlanSource.Raphael : PlanSource.Own;
+                _saveConfig();
+            }
+
+            var intent = (int)_config.Solver.Intent;
+            solver.Row("Hard crafts: quality or time", "When no rotation reaches full quality on paper, the expert solver makes the item. Quality first takes as long as it needs; bulk gives up a little quality to finish sooner. Auto: bulk when the run still has the number of crafts below to make.", 190f, () =>
+            {
+                ImGui.SetNextItemWidth(190f);
+                if (ImGui.Combo("##intent", ref intent, IntentLabels, IntentLabels.Length)) { _config.Solver.Intent = (CraftIntent)intent; _saveConfig(); }
+            });
+
+            var bulkFrom = _config.Solver.BulkFrom;
+            solver.Row("Auto: bulk from this many crafts", null, 90f, () =>
+            {
+                ImGui.SetNextItemWidth(90f);
+                if (ImGui.InputInt("##bulkFrom", ref bulkFrom)) { _config.Solver.BulkFrom = Math.Clamp(bulkFrom, 2, 999); _saveConfig(); }
+            });
+
             var budget = _config.Solver.LookaheadBudgetMs;
             solver.Row("Lookahead budget (ms)", "Runs on a background thread during the action's animation lock — it never stalls the game.", 160f, () =>
             {
@@ -779,6 +821,8 @@ public sealed class MainWindow : Window
         StatusLine("Queue", _engine.Status);
         StatusLine("Stop after run", _stopAfterRunStatus());
         StatusLine("Solver", _config.Solver.Enabled ? _solverStatus() : "off — switched off in Settings");
+        StatusLine("Expert solver", _expertStatus());
+        StatusLine("Planner", _plannerStatus());
         StatusLine("Raphael", _raphaelStatus());
         StatusLine("Raphael warm-up", _warmupStatus());
         StatusLine("Vendor trip", _desk.BuyStatus);

@@ -94,17 +94,20 @@ public sealed class CraftingLogWindow : Window
         DrawConsumables(recipeId);
         DrawSolverOptions(recipeId);
         DrawRun(recipeId, observation);
-        DrawOutcome(recipeId);
+        DrawOutcome(recipeId, observation.CosmicLog || (_run.Active && _run.InCosmicLog));
     }
 
-    private void DrawOutcome(uint recipeId)
+    /// <param name="rated">A Cosmic mission's item: it has ratings, not quality grades - the tally counts its top rating.</param>
+    private void DrawOutcome(uint recipeId, bool rated)
     {
         if (_outcomeFor(recipeId) is not { } outcome || outcome.Crafts == 0)
             return;
 
         var pct = (int)(100L * outcome.Hq / outcome.Crafts);
-        HephaestusTheme.SectionLabel("HQ rate");
-        HephaestusTheme.Text($"{pct}% HQ — {outcome.Hq} of {outcome.Crafts} crafts", HephaestusTheme.TextSecondary);
+        HephaestusTheme.SectionLabel(rated ? "Top rating" : "HQ rate");
+        HephaestusTheme.Text(
+            rated ? $"{pct}% at the top rating — {outcome.Hq} of {outcome.Crafts} crafts" : $"{pct}% HQ — {outcome.Hq} of {outcome.Crafts} crafts",
+            HephaestusTheme.TextSecondary);
     }
 
     private void DrawMode()
@@ -201,6 +204,21 @@ public sealed class CraftingLogWindow : Window
             ImGui.TextColored(HephaestusTheme.StatusGreen, _run.Status);
             if (Buttons.Action("Stop"))
                 _run.Halt("stopped by you");
+
+            // The gentle one: the craft in hand is finished and counted, and no other is started.
+            ImGui.SameLine();
+            if (_run.StoppingAfterCraft)
+            {
+                ImGui.TextColored(HephaestusTheme.StatusYellow, "stopping after this craft");
+            }
+            else
+            {
+                if (ImGui.Button("Stop after this craft"))
+                    _run.StopAfterCraft("stopped by you after the craft in hand");
+                if (ImGui.IsItemHovered())
+                    ImGui.SetTooltip("Finishes the craft in progress, then pauses the run. Resume picks it up again.");
+            }
+
             return;
         }
 
@@ -230,12 +248,14 @@ public sealed class CraftingLogWindow : Window
         // Queueing does not need the materials to be on hand — that is what a queue is for.
         ImGui.SameLine();
         var queued = QueueQuantity(_launcher.Count);
-        ImGui.BeginDisabled(observation.SelectedRecipeId == 0);
+        ImGui.BeginDisabled(observation.SelectedRecipeId == 0 || observation.CosmicLog); // a mission's recipe only exists inside its mission
         if (ImGui.Button($"Add {queued} to queue"))
             _addToQueue(observation.SelectedRecipeId, queued);
         ImGui.EndDisabled();
         if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
-            ImGui.SetTooltip("Adds this recipe to your Hephaestus queue instead of crafting it now.\nUses the count on the left; 0 adds one.");
+            ImGui.SetTooltip(observation.CosmicLog
+                ? "A Cosmic mission's recipe cannot be queued - use Craft All."
+                : "Adds this recipe to your Hephaestus queue instead of crafting it now.\nUses the count on the left; 0 adds one.");
     }
 
     /// <summary>The count box means \"all I can make\" at 0 for Craft All; for the queue, 0 simply adds one.</summary>

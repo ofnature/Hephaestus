@@ -50,6 +50,91 @@ public class CraftRunTests
         Tick(run, ReadyInLog(before + 1));
     }
 
+    // ---- the Cosmic Crafting Log: a mission may take the item as it is made ----
+
+    [Fact]
+    public void InTheCosmicLog_ASynthesisThatFilledItsProgress_IsACraftMade_ThoughNothingReachesTheBags()
+    {
+        var run = new CraftRun();
+        run.Start(Recipe, 2, Settings);
+        var cosmic = ReadyInLog() with { CosmicLog = true };
+        var made = new List<bool>();
+        run.CraftCompleted += (_, hq) => made.Add(hq);
+
+        Assert.Equal(CraftRunCommand.PressSynthesize, Tick(run, cosmic));
+        Tick(run, Synthesizing(0, 40));
+        Tick(run, Synthesizing(100, 10));
+        Tick(run, cosmic with { Transitioning = true });
+        Assert.Equal(0, run.Completed);          // not while the finish is still playing
+        Tick(run, cosmic);                       // the bags say nothing arrived - and there is no waiting for them: a mission is on the clock
+
+        Assert.Equal(1, run.Completed);
+        Assert.Single(made);
+        Assert.True(run.Active);
+        Assert.Equal(CraftRunCommand.PressSynthesize, Tick(run, cosmic)); // and the next one starts
+    }
+
+    [Fact]
+    public void InTheCosmicLog_ASynthesisThatBroke_IsStillAFailure_AndOneThatWasQuitStillStopsTheRun()
+    {
+        var broke = new CraftRun();
+        broke.Start(Recipe, 2, Settings);
+        var cosmic = ReadyInLog() with { CosmicLog = true };
+        Tick(broke, cosmic);
+        Tick(broke, Synthesizing(60, 0));
+        Tick(broke, cosmic);
+        Tick(broke, cosmic, advanceSeconds: 10);
+        Assert.Equal(0, broke.Completed);
+        Assert.Equal(1, broke.Failed);
+        Assert.True(broke.Active);
+
+        var quit = new CraftRun();
+        quit.Start(Recipe, 2, Settings);
+        Tick(quit, cosmic);
+        Tick(quit, Synthesizing(60, 20));
+        Tick(quit, cosmic);
+        Tick(quit, cosmic, advanceSeconds: 10);
+        Assert.Equal(CraftRunHalt.Cancelled, quit.HaltKind);
+    }
+
+    [Fact]
+    public void StopAfterThisCraft_SaysSoWhileItWaits_FinishesTheCraftInHand_ThenPausesResumable()
+    {
+        var run = new CraftRun();
+        run.Start(Recipe, 5, Settings);
+        Assert.False(run.StoppingAfterCraft);
+
+        Assert.Equal(CraftRunCommand.PressSynthesize, Tick(run, ReadyInLog()));
+        Tick(run, Synthesizing(0, 40));
+        run.StopAfterCraft("stopped by you after the craft in hand");
+        Assert.True(run.StoppingAfterCraft);
+        Assert.True(run.Active); // the craft in hand goes on
+
+        Tick(run, Synthesizing(100, 10));
+        Tick(run, ReadyInLog(1));
+        Assert.Equal(1, run.Completed);
+        Assert.Equal(CraftRunCommand.None, Tick(run, ReadyInLog(1))); // no second Synthesize
+
+        Assert.False(run.Active);
+        Assert.False(run.StoppingAfterCraft);
+        Assert.True(run.CanResume);
+        Assert.Equal(CraftRunHalt.Stopped, run.HaltKind);
+    }
+
+    [Fact]
+    public void InTheOrdinaryLog_AFullProgressBarAloneIsNotAnItem()
+    {
+        var run = new CraftRun();
+        run.Start(Recipe, 2, Settings);
+        Tick(run, ReadyInLog());
+        Tick(run, Synthesizing(100, 10));
+        Tick(run, ReadyInLog());
+        Tick(run, ReadyInLog(), advanceSeconds: 10);
+
+        Assert.Equal(0, run.Completed);
+        Assert.Equal(CraftRunHalt.Cancelled, run.HaltKind); // the verdict there is the item itself
+    }
+
     [Fact]
     public void NewRun_IsIdleAndSaysSo()
     {

@@ -1,13 +1,16 @@
+using System;
 using System.Collections.Generic;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.Game.UI;
 using Hephaestus.Features.Crafting;
 using Hephaestus.Features.Crafting.Driving;
+using Hephaestus.Features.Crafting.Expert;
 using Hephaestus.Features.Crafting.Simulation;
 using Hephaestus.Features.Crafting.Solver;
 using GameAction = Lumina.Excel.Sheets.Action;
 using Item = Lumina.Excel.Sheets.Item;
+using MissionRefine = Lumina.Excel.Sheets.WKSMissionToDoEvalutionRefin;
 using Recipe = Lumina.Excel.Sheets.Recipe;
 
 namespace Hephaestus.Services.Game;
@@ -33,13 +36,16 @@ public sealed unsafe class CraftSetupReader
     private readonly IObjectTable _objects;
     private readonly GameActionMap _actions;
     private readonly HephaestusConfig _config;
+    private readonly Func<bool> _bulk;
 
-    public CraftSetupReader(IDataManager data, IObjectTable objects, GameActionMap actions, HephaestusConfig config)
+    /// <param name="bulk">The craft about to start is one of many (time decides) rather than a one-off (quality first).</param>
+    public CraftSetupReader(IDataManager data, IObjectTable objects, GameActionMap actions, HephaestusConfig config, Func<bool>? bulk = null)
     {
         _data = data;
         _objects = objects;
         _actions = actions;
         _config = config;
+        _bulk = bulk ?? (() => false);
     }
 
     public CraftSetup? Read(SynthesisSnapshot snapshot)
@@ -73,6 +79,8 @@ public sealed unsafe class CraftSetupReader
             var manipulation = ManipulationUnlocked(job);
 
             var allowed = ActionMask.All;
+            // Cosmic Exploration duty actions: the simulator knows them, the plugin does not read a mission's charges yet.
+            allowed = ActionMask.Without(ActionMask.Without(allowed, CraftAction.StellarSteadyHand), CraftAction.MaterialMiracle);
             if (!manipulation)
                 allowed = ActionMask.Without(allowed, CraftAction.Manipulation);
             if (!heartAndSoul)
@@ -80,7 +88,8 @@ public sealed unsafe class CraftSetupReader
             if (!quickInnovation)
                 allowed = ActionMask.Without(allowed, CraftAction.QuickInnovation);
             // Trained Eye: only on recipes 10+ levels below the crafter, never on expert ones.
-            if (expert || level < table.ClassJobLevel + 10)
+            var trainedEye = !expert && level >= table.ClassJobLevel + 10;
+            if (!trainedEye)
                 allowed = ActionMask.Without(allowed, CraftAction.TrainedEye);
 
             var baseProgress = CraftParameters.ComputeBaseProgress(craftsmanship, level, table.ClassJobLevel, table.ProgressDivider, table.ProgressModifier);
@@ -106,14 +115,100 @@ public sealed unsafe class CraftSetupReader
                 Manipulation: manipulation,
                 HeartAndSoul: heartAndSoul,
                 QuickInnovation: quickInnovation,
-                BackloadProgress: settings.BackloadProgress);
+                BackloadProgress: settings.BackloadProgress,
+                TrainedEye: trainedEye);
 
-            return new CraftSetup(parameters, conditionsFlag, request);
+            // An expert recipe goes to the expert solver, with what the item must reach and what a Cosmic mission lends.
+            ExpertProblem? problem = null;
+            if (recipe.IsExpert && _config.Solver.ExpertSolver)
+            {
+                var duty = snapshot.DutyAction;
+                parameters = parameters with
+                {
+                    AllowedActions = duty is { } lent ? ActionMask.With(allowed, lent) : allowed,
+                    SplendorousTools = HoldsSplendorousTool(),
+                };
+
+                var tiers = CosmicRatings(recipe, snapshot.MaxQuality);
+                var target = recipe.RequiredQuality > 0 ? (int)recipe.RequiredQuality : tiers?[^1] ?? snapshot.MaxQuality;
+                // A scored collectable is made against the mission's clock; an item with a demand is worth the time it takes.
+                problem = new ExpertProblem(
+                    ItemName(recipe, snapshot.RecipeId), parameters, conditionsFlag,
+                    snapshot.StepIndex <= 1 ? snapshot.Quality : 0, target, tiers, duty,
+                    TimeValue: tiers != null ? ExpertTuningBook.TimeValue : 0);
+            }
+
+            // An ordinary recipe, as the expert solver would be given it - for the craft our planner finds no rotation to
+            // full quality for (CraftSession decides, once the rotation is in). Time has a price only in bulk crafting.
+            ExpertProblem? tight = null;
+            if (problem == null && _config.Solver.ExpertSolver && _config.Solver.Planner == PlanSource.Own)
+            {
+                tight = new ExpertProblem(
+                    ItemName(recipe, snapshot.RecipeId), parameters with { SplendorousTools = HoldsSplendorousTool() }, conditionsFlag,
+                    snapshot.StepIndex <= 1 ? snapshot.Quality : 0, snapshot.MaxQuality,
+                    TimeValue: _bulk() ? ExpertTuningBook.BulkTimeValue : 0,
+                    ByHqChance: recipe.CanHq); // short of the full bar it is still worth its HQ chance
+            }
+
+            return new CraftSetup(parameters, conditionsFlag, request, problem, tight);
         }
         catch
         {
             return null;
         }
+    }
+
+    private static string ItemName(in Recipe recipe, uint recipeId)
+    {
+        var name = recipe.ItemResult.ValueNullable?.Name.ExtractText();
+        return string.IsNullOrEmpty(name) ? $"recipe {recipeId}" : name;
+    }
+
+    /// <summary>
+    /// A Cosmic Exploration collectable's three ratings as QUALITY, lowest first; null for anything else.
+    /// Recipe.CollectableMetadataKey 7 = the metadata is a WKSMissionToDoEvalutionRefin row of three percentages of
+    /// the maximum quality; a rating is floor(percent x max / 1000) collectability (Artisan's formula - it matches
+    /// the Synthesis window: 1315 / 1578 / 2235 for 50 / 60 / 85% of 26,300).
+    /// </summary>
+    private int[]? CosmicRatings(in Recipe recipe, int maxQuality)
+    {
+        const int CosmicMetadata = 7;
+        if (recipe.CollectableMetadataKey != CosmicMetadata)
+            return null;
+        if (_data.GetExcelSheet<MissionRefine>().GetRowOrDefault(recipe.CollectableMetadata.RowId) is not { } row)
+            return null;
+        if (row.Unknown0 == 0 || row.Unknown1 < row.Unknown0 || row.Unknown2 < row.Unknown1)
+            return null;
+
+        return new[]
+        {
+            row.Unknown0 * maxQuality / 1000 * 10,
+            row.Unknown1 * maxQuality / 1000 * 10,
+            row.Unknown2 * maxQuality / 1000 * 10,
+        };
+    }
+
+    /// <summary>
+    /// The main-hand tool makes Good worth x1.75 instead of x1.5: the Splendorous tools from Crystalline on and the
+    /// Cosmic tools from phase 9 on. The game says so only in the item's description text; in the Item sheet they are
+    /// exactly the crafting main hands of rarity 4 (pink) at item level 620 and above (checked 2026-11-11 - the
+    /// replicas are rarity 4 too, at item level 1).
+    /// </summary>
+    private bool HoldsSplendorousTool()
+    {
+        var inventory = InventoryManager.Instance();
+        if (inventory == null)
+            return false;
+
+        var equipped = inventory->GetInventoryContainer(InventoryType.EquippedItems);
+        if (equipped == null || equipped->Size == 0)
+            return false;
+
+        var mainHand = equipped->GetInventorySlot(0);
+        if (mainHand == null || mainHand->ItemId == 0)
+            return false;
+
+        return _data.GetExcelSheet<Item>().GetRowOrDefault(mainHand->ItemId) is { Rarity: 4 } tool && tool.LevelItem.RowId >= 620;
     }
 
     /// <summary>
@@ -139,6 +234,10 @@ public sealed unsafe class CraftSetupReader
 
             var job = player.ClassJob.RowId;
             if (recipe.CraftType.RowId + FirstCraftingJob != job)
+                return null;
+
+            // An expert recipe is not made from a Raphael plan (see Read): nothing to pre-solve.
+            if (recipe.IsExpert && _config.Solver.ExpertSolver)
                 return null;
 
             var level = player.Level;
@@ -171,7 +270,8 @@ public sealed unsafe class CraftSetupReader
                 Manipulation: ManipulationUnlocked(job),
                 HeartAndSoul: canSpecialist && settings.AllowHeartAndSoul,
                 QuickInnovation: canSpecialist && settings.AllowQuickInnovation,
-                BackloadProgress: settings.BackloadProgress);
+                BackloadProgress: settings.BackloadProgress,
+                TrainedEye: !expert && level >= table.ClassJobLevel + 10);
         }
         catch
         {

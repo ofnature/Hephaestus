@@ -109,10 +109,13 @@ public sealed class CraftAllOverlay : Window
             return;
         }
 
-        if (GoldButton("+ Queue", new Vector2(QueueWidth * _scale, _buttonSize.Y), _scale, observation.SelectedRecipeId != 0))
+        // A mission's recipe only exists inside its mission: the queue could never open it.
+        if (GoldButton("+ Queue", new Vector2(QueueWidth * _scale, _buttonSize.Y), _scale, observation.SelectedRecipeId != 0 && !observation.CosmicLog))
             _addToQueue(observation.SelectedRecipeId, CraftingLogWindow.QueueQuantity(_launcher.Count));
         if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
-            ImGui.SetTooltip("Hephaestus: add this recipe to your queue instead of crafting it now.\nUses the count box; 0 adds one.");
+            ImGui.SetTooltip(observation.CosmicLog
+                ? "Hephaestus: a Cosmic mission's recipe cannot be queued - use Craft All beside it."
+                : "Hephaestus: add this recipe to your queue instead of crafting it now.\nUses the count box; 0 adds one.");
         ImGui.SameLine();
 
         // Vertically centre the (shorter) input against the button.

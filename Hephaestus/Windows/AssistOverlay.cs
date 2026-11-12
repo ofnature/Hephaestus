@@ -58,6 +58,13 @@ public sealed class AssistOverlay : Window
             ImGuiHelpers.SetNextWindowPosRelativeMainViewport(anchor + new Vector2(4f, 0f), ImGuiCond.Appearing);
     }
 
+    /// <summary>"about 45 s left" / "about 1 min 20 s left" - rounded to five seconds: it is an estimate and should read like one.</summary>
+    internal static string TimeLeft(double seconds)
+    {
+        var rounded = Math.Max(5, (int)Math.Round(seconds / 5.0) * 5);
+        return rounded < 60 ? $"about {rounded} s left" : $"about {rounded / 60} min {rounded % 60:00} s left";
+    }
+
     public override void Draw()
     {
         HephaestusHeader.DrawCompact("Next action");
@@ -75,6 +82,14 @@ public sealed class AssistOverlay : Window
         Pill.Draw(
             recommendation.FollowsBaseline ? "on plan" : "off plan",
             recommendation.FollowsBaseline ? HephaestusTheme.StatusGreen : HephaestusTheme.StatusYellow);
+        if (recommendation.SecondsLeft >= 0)
+        {
+            ImGui.SameLine();
+            ImGui.TextColored(HephaestusTheme.TextSecondary, TimeLeft(recommendation.SecondsLeft));
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("An estimate for this item: the solver's own expected steps, at about 2.5 s for an action that works the item and 1.25 s for the rest.");
+        }
+
         ImGui.EndGroup();
 
         if (recommendation.Preview.Count > 0)

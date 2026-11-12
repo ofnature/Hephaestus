@@ -45,6 +45,10 @@ public sealed record EvaluatorSettings
 /// <param name="Depth">Deepest search depth that completed inside the budget.</param>
 /// <param name="FollowsBaseline">The action is the baseline's own next step.</param>
 /// <param name="Reason">One line for the status display: following the plan, or why not.</param>
+/// <param name="SecondsLeft">
+/// About how long the rest of this item takes from here, the action named included - an ESTIMATE on the
+/// simulator's clock (<see cref="CraftSimulator.QuarterSeconds"/>); negative = not known.
+/// </param>
 public readonly record struct Recommendation(
     CraftAction? Action,
     IReadOnlyList<CraftAction> Preview,
@@ -52,7 +56,8 @@ public readonly record struct Recommendation(
     int Depth,
     BaselineStatus Baseline,
     bool FollowsBaseline,
-    string Reason);
+    string Reason,
+    double SecondsLeft = -1);
 
 /// <summary>
 /// The live half of the hybrid solver. After every real action it re-scores every legal next
@@ -63,7 +68,7 @@ public readonly record struct Recommendation(
 /// Pure CPU over value-type states: run <see cref="Recommend"/> on a background thread with an
 /// immutable snapshot. One instance per craft; do not call its methods concurrently.
 /// </summary>
-public sealed class LiveEvaluator
+public sealed class LiveEvaluator : ICraftAdvisor
 {
     private static readonly CraftAction[] AllActions = Enum.GetValues<CraftAction>();
 
@@ -168,7 +173,36 @@ public sealed class LiveEvaluator
         var follows = planned is { } p && best == p;
         return new Recommendation(
             best, Preview(state, condition, best), bestScore, depthReached, _baseline.Status, follows,
-            Explain(best, planned, condition, bestScore, plannedScore, follows));
+            Explain(best, planned, condition, bestScore, plannedScore, follows), SecondsLeft(state, condition, best));
+    }
+
+    /// <summary>The rest of the craft on the simulator's clock, if conditions stay Normal: the action chosen, what is left of the plan, the finisher.</summary>
+    private double SecondsLeft(in CraftState state, Condition condition, CraftAction chosen)
+    {
+        var quarters = CraftSimulator.QuarterSeconds(chosen);
+        if (CraftSimulator.Use(_parameters, state, chosen, condition, true, out var next) != ActionError.None
+            || CraftSimulator.IsFinal(_parameters, next))
+            return quarters / 4.0;
+
+        var consumed = BaselineTracker.Consume(_remaining, 0UL, chosen);
+        for (var i = 0; i < _remaining.Length; i++)
+        {
+            if (i < 64 && (consumed & (1UL << i)) != 0)
+                continue;
+            if (CraftSimulator.Use(_parameters, next, _remaining[i], Condition.Normal, true, out var after) != ActionError.None)
+                continue;
+
+            quarters += CraftSimulator.QuarterSeconds(_remaining[i]);
+            next = after;
+            if (CraftSimulator.IsFinal(_parameters, next))
+                return quarters / 4.0;
+        }
+
+        var closing = new List<CraftAction>();
+        Finisher.Run(_parameters, next, out _, closing);
+        foreach (var action in closing)
+            quarters += CraftSimulator.QuarterSeconds(action);
+        return quarters / 4.0;
     }
 
     // ---- search ------------------------------------------------------------------------------------

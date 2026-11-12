@@ -21,6 +21,9 @@ public readonly record struct MissingIngredient(string Name, int Have, int Need)
 /// <summary>
 /// Thin fail-open adapter over the crafting log (RecipeNote) and the Synthesis window: builds the
 /// observation <see cref="CraftRun"/> decides on, and executes the commands it answers with.
+/// The Cosmic Crafting Log (WKSRecipeNotebook) counts as the log when it is the one on screen: the same
+/// recipe data behind it, its own Synthesize callback, button and "Craftable" number. NOT SEEN IN GAME
+/// when written (2026-11-12) - the calls are Artisan's.
 ///
 /// The game calls mirror what Artisan has field-verified (PunishXIV/Artisan, GameInterop/):
 /// <c>AgentRecipeNote.OpenRecipeByRecipeId</c> to select a recipe, the NQ/HQ assignment bytes in
@@ -41,6 +44,14 @@ public sealed unsafe class CraftingLogGame
 
     /// <summary>RecipeNote callback that closes the log — which is also how the crafting stance is left.</summary>
     private const int CloseCallback = -1;
+
+    // The COSMIC Crafting Log (Cosmic Exploration missions) is a window of its own over the same recipe data
+    // (Artisan, GameInterop/Operations.cs + UI/KTK/NativeCraftAll.cs, re-read from 4.0.5.23 on 2026-11-12):
+    // callback 6 presses its Synthesize, text node 34 is its "Craftable" number, node 50 its Synthesize button.
+    private const string CosmicLogName = "WKSRecipeNotebook";
+    private const int CosmicSynthesizeCallback = 6;
+    private const uint CosmicCraftableNode = 34;
+    private const uint CosmicSynthesizeButtonNode = 50;
 
     /// <summary>Shards, crystals and clusters: item rows 2..19, kept in a container of their own.</summary>
     private const uint FirstCrystalItem = 2;
@@ -96,14 +107,18 @@ public sealed unsafe class CraftingLogGame
         try
         {
             var log = LogAddon();
+            var cosmic = log == null ? CosmicLogAddon() : null;
             var selected = SelectedRecipe();
             var synthesis = SynthesisAddon();
             var gear = log == null || selected == null ? null : UnselectedGear(log, selected);
 
             return new CraftRunObservation(
-                LogOpen: log != null,
+                LogOpen: log != null || cosmic != null,
                 SelectedRecipeId: selected == null ? 0u : selected->RecipeId,
-                Craftable: log == null || selected == null ? -1 : Craftable(log, selected->RecipeId),
+                Craftable: selected == null ? -1
+                    : log != null ? Craftable(log, selected->RecipeId)
+                    : cosmic != null ? Math.Max(ReadCosmicCraftable(cosmic), ComputeCraftable(selected->RecipeId))
+                    : -1,
                 IngredientsAssigned: selected != null && AllAssigned(log, selected),
                 SynthesisOpen: synthesis != null,
                 Transitioning: _condition[ConditionFlag.ExecutingCraftingAction],
@@ -114,7 +129,8 @@ public sealed unsafe class CraftingLogGame
                 MinGearConditionPercent: MinGearConditionPercent(),
                 GearMaterialUnselected: gear != null,
                 GearMaterialRefusal: gear == null ? null : GearMaterial.Choose(gear.Value.Holdings).Refusal,
-                ResultItemHqCount: CountResultItemHq(runRecipeId));
+                ResultItemHqCount: CountResultItemHq(runRecipeId),
+                CosmicLog: cosmic != null);
         }
         catch
         {
@@ -129,9 +145,10 @@ public sealed unsafe class CraftingLogGame
         get
         {
             var log = LogAddon();
-            return log == null
+            var window = log != null ? &log->AtkUnitBase : CosmicLogAddon();
+            return window == null
                 ? null
-                : new Vector2(log->AtkUnitBase.X + log->AtkUnitBase.GetScaledWidth(true), log->AtkUnitBase.Y);
+                : new Vector2(window->X + window->GetScaledWidth(true), window->Y);
         }
     }
 
@@ -144,7 +161,9 @@ public sealed unsafe class CraftingLogGame
         get
         {
             var log = LogAddon();
-            if (log == null || log->SynthesizeButton == null)
+            if (log == null)
+                return CosmicSynthesizeButtonRect();
+            if (log->SynthesizeButton == null)
                 return null;
 
             var node = log->SynthesizeButton->AtkComponentBase.OwnerNode;
@@ -157,6 +176,17 @@ public sealed unsafe class CraftingLogGame
                 new Vector2(node->AtkResNode.Width * scale, node->AtkResNode.Height * scale),
                 scale);
         }
+    }
+
+    private (Vector2 Position, Vector2 Size, float Scale)? CosmicSynthesizeButtonRect()
+    {
+        var cosmic = CosmicLogAddon();
+        var node = cosmic == null ? null : cosmic->GetNodeById(CosmicSynthesizeButtonNode);
+        if (node == null)
+            return null;
+
+        var scale = cosmic->Scale;
+        return (new Vector2(node->ScreenX, node->ScreenY), new Vector2(node->Width * scale, node->Height * scale), scale);
     }
 
     public string RecipeName(uint recipeId)
@@ -264,25 +294,45 @@ public sealed unsafe class CraftingLogGame
         }
     }
 
-    private void PressSynthesize() => Fire(SynthesizeCallback);
+    private void PressSynthesize() => Fire(SynthesizeCallback, CosmicSynthesizeCallback);
 
-    /// <summary>Close the crafting log. The game refuses a job change while it is open.</summary>
-    public void CloseLog() => Fire(CloseCallback);
+    /// <summary>Close the crafting log (either one). The game refuses a job change while it is open.</summary>
+    public void CloseLog() => Fire(CloseCallback, CloseCallback);
 
-    private void Fire(int callback)
+    /// <summary>One callback to whichever log is open: the crafting log, else the Cosmic one.</summary>
+    private void Fire(int callback, int cosmicCallback)
     {
         var log = LogAddon();
-        if (log == null)
+        var window = log != null ? &log->AtkUnitBase : CosmicLogAddon();
+        if (window == null)
             return;
 
-        var value = new AtkValue { Type = AtkValueType.Int, Int = callback };
-        log->AtkUnitBase.FireCallback(1, &value, true);
+        var value = new AtkValue { Type = AtkValueType.Int, Int = log != null ? callback : cosmicCallback };
+        window->FireCallback(1, &value, true);
     }
 
     private AddonRecipeNote* LogAddon()
     {
         var addon = (AddonRecipeNote*)_gameGui.GetAddonByName("RecipeNote").Address;
         return addon != null && addon->AtkUnitBase.IsVisible && addon->AtkUnitBase.IsReady ? addon : null;
+    }
+
+    /// <summary>The Cosmic Crafting Log, when it is the log on screen.</summary>
+    private AtkUnitBase* CosmicLogAddon()
+    {
+        var addon = (AtkUnitBase*)_gameGui.GetAddonByName(CosmicLogName).Address;
+        return addon != null && addon->IsVisible && addon->IsReady ? addon : null;
+    }
+
+    /// <summary>The Cosmic log's own "Craftable" number; -1 when it cannot be read.</summary>
+    private static int ReadCosmicCraftable(AtkUnitBase* cosmic)
+    {
+        var node = cosmic->GetTextNodeById(CosmicCraftableNode);
+        if (node == null)
+            return -1;
+
+        var digits = new string(Array.FindAll(node->NodeText.ToString().ToCharArray(), char.IsDigit));
+        return int.TryParse(digits, out var count) ? count : -1;
     }
 
     private AtkUnitBase* SynthesisAddon()

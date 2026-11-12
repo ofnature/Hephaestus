@@ -169,6 +169,29 @@ public sealed class QueueSettings
     public bool MateriaExtraction { get; set; } = true;
 }
 
+/// <summary>Who lays out the rotation for an ordinary (non-expert) recipe.</summary>
+public enum PlanSource
+{
+    /// <summary>Our own planner, inside the plugin (2026-11-11).</summary>
+    Own,
+
+    /// <summary>The bundled raphael-cli, as before - kept so the two can be compared on real crafts.</summary>
+    Raphael,
+}
+
+/// <summary>What a craft is FOR, which is what decides whether its time matters (user, 2026-11-11).</summary>
+public enum CraftIntent
+{
+    /// <summary>Bulk when the run in hand still has <see cref="SolverTuning.BulkFrom"/> or more of the item to make, quality first otherwise.</summary>
+    Auto,
+
+    /// <summary>A one-off, a high-quality attempt: quality first, however long it takes.</summary>
+    QualityFirst,
+
+    /// <summary>A lot of crafting: time decides.</summary>
+    Bulk,
+}
+
 public sealed class SolverTuning
 {
     /// <summary>
@@ -202,6 +225,34 @@ public sealed class SolverTuning
 
     /// <summary>Hard depth cap for the iterative-deepening lookahead.</summary>
     public int LookaheadMaxDepth { get; set; } = 4;
+
+    /// <summary>
+    /// Expert recipes (the game's own label) are made by the expert solver - a policy that reacts to
+    /// every condition, checked against sampled futures - instead of a Raphael plan. Off = every
+    /// recipe gets the Raphael baseline and the live evaluator, as before 2026-11-11.
+    /// </summary>
+    public bool ExpertSolver { get; set; } = true;
+
+    /// <summary>
+    /// Tune the expert solver for each expert recipe and the crafter's stats the first time it is met:
+    /// a second or two of simulated crafts on background threads. Off = presets and defaults only.
+    /// </summary>
+    public bool ExpertTuning { get; set; } = true;
+
+    /// <summary>Futures the expert solver samples per candidate action before a decision; 0 = the policy alone.</summary>
+    public int ExpertFutures { get; set; } = 128;
+
+    /// <summary>
+    /// Who plans the rotation for an ordinary recipe. With <see cref="PlanSource.Own"/>, an item no rotation carries
+    /// to full quality on paper is made by the expert solver (when <see cref="ExpertSolver"/> is on).
+    /// </summary>
+    public PlanSource Planner { get; set; } = PlanSource.Own;
+
+    /// <summary>Whether time matters when the expert solver makes an ordinary item (the planned-rotation road is the short one already).</summary>
+    public CraftIntent Intent { get; set; } = CraftIntent.Auto;
+
+    /// <summary><see cref="CraftIntent.Auto"/>: a run with this many of the item still to make is bulk crafting.</summary>
+    public int BulkFrom { get; set; } = 10;
 
     /// <summary>
     /// Early-discard rule for the Raphael baseline: drift (CP, durability or progress) beyond this

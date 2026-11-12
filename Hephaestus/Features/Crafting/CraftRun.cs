@@ -17,6 +17,10 @@ namespace Hephaestus.Features.Crafting;
 /// <param name="GearMaterialUnselected">A piece of GEAR the recipe uses up has not been chosen yet (the log's "Unselected" row).</param>
 /// <param name="GearMaterialRefusal">Why choosing it is not safe (see <see cref="GearMaterial"/>); null when it is.</param>
 /// <param name="ResultItemHqCount">HQ-only count of the run's result item — how completion tells an HQ result from NQ.</param>
+/// <param name="CosmicLog">
+/// The open log is the COSMIC Crafting Log (a Cosmic Exploration mission). A mission may take the item the moment it is
+/// made (a Master mission scores it at once), so there the bags cannot be the only witness of a finished craft.
+/// </param>
 public readonly record struct CraftRunObservation(
     bool LogOpen,
     uint SelectedRecipeId,
@@ -31,7 +35,8 @@ public readonly record struct CraftRunObservation(
     int MinGearConditionPercent,
     bool GearMaterialUnselected = false,
     string? GearMaterialRefusal = null,
-    int ResultItemHqCount = 0);
+    int ResultItemHqCount = 0,
+    bool CosmicLog = false);
 
 /// <summary>The one thing the adapter should do this tick.</summary>
 public enum CraftRunCommand
@@ -207,6 +212,9 @@ public sealed class CraftRun
             _stopAfterCraft = reason;
     }
 
+    /// <summary>Someone asked for the run to stop once the synthesis in progress is over.</summary>
+    public bool StoppingAfterCraft => Active && _stopAfterCraft != null;
+
     /// <summary>Stop now. The position is kept, so the run can be resumed.</summary>
     public void Halt(CraftRunHalt kind, string reason)
     {
@@ -232,14 +240,26 @@ public sealed class CraftRun
         Status = "Idle — no run started.";
     }
 
-    public CraftRunCommand Tick(in CraftRunObservation obs, DateTime now) => Phase switch
+    public CraftRunCommand Tick(in CraftRunObservation obs, DateTime now)
     {
-        CraftRunPhase.Preparing => TickPreparing(obs, now),
-        CraftRunPhase.Starting => TickStarting(obs, now),
-        CraftRunPhase.Crafting => TickCrafting(obs, now),
-        CraftRunPhase.Finishing => TickFinishing(obs, now),
-        _ => CraftRunCommand.None,
-    };
+        // Which log the run is working in is only visible between crafts: both hide during a synthesis.
+        if (obs.LogOpen)
+            _cosmic = obs.CosmicLog;
+
+        return Phase switch
+        {
+            CraftRunPhase.Preparing => TickPreparing(obs, now),
+            CraftRunPhase.Starting => TickStarting(obs, now),
+            CraftRunPhase.Crafting => TickCrafting(obs, now),
+            CraftRunPhase.Finishing => TickFinishing(obs, now),
+            _ => CraftRunCommand.None,
+        };
+    }
+
+    /// <summary>The log last seen open was the Cosmic Crafting Log (both logs hide during a synthesis).</summary>
+    public bool InCosmicLog => _cosmic;
+
+    private bool _cosmic;
 
     private void Begin(CraftRunSettings settings)
     {
@@ -402,6 +422,18 @@ public sealed class CraftRun
             Completed++;
             _consecutiveFailures = 0;
             CraftCompleted?.Invoke(RecipeId, obs.ResultItemHqCount > _hqBefore);
+            EnterPreparing();
+            return CraftRunCommand.None;
+        }
+
+        // A Cosmic mission may take the item as it is made. There the synthesis is its own witness: it ended with the
+        // progress bar full. Taken at once - a mission is on the clock, and three seconds an item spent waiting for
+        // bags that will not change were seen to cost about one item in twenty (user, 2026-11-12).
+        if (_cosmic && _lastMaxProgress > 0 && _lastProgress >= _lastMaxProgress)
+        {
+            Completed++;
+            _consecutiveFailures = 0;
+            CraftCompleted?.Invoke(RecipeId, false);
             EnterPreparing();
             return CraftRunCommand.None;
         }

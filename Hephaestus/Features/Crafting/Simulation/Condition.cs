@@ -96,6 +96,28 @@ public static class ConditionOdds
     /// </summary>
     /// <param name="rollOdds">From <see cref="ForRecipe"/>.</param>
     /// <param name="roll">Uniform in [0, 1).</param>
+    /// <param name="materialMiracle">
+    /// Cosmic Exploration: Material Miracle is running (<see cref="CraftState.MaterialMiracle"/> above 0 AFTER
+    /// the action). A free roll then lands on one of its six conditions, whatever the recipe deals - evenly,
+    /// by what Artisan measured. Forced transitions still come first.
+    /// </param>
+    public static Condition Next(float[] rollOdds, bool expert, Condition current, float roll, bool materialMiracle)
+    {
+        if (!materialMiracle || current is Condition.Excellent or Condition.Poor or Condition.GoodOmen or Condition.Robust
+            || (current == Condition.Good && !expert))
+        {
+            return Next(rollOdds, expert, current, roll);
+        }
+
+        return MiracleConditions[Math.Min(MiracleConditions.Length - 1, (int)(roll * MiracleConditions.Length))];
+    }
+
+    private static readonly Condition[] MiracleConditions =
+    {
+        Condition.Good, Condition.Centered, Condition.Sturdy, Condition.Pliant, Condition.Malleable, Condition.Primed,
+    };
+
+    /// <summary>The same with no Material Miracle running.</summary>
     public static Condition Next(float[] rollOdds, bool expert, Condition current, float roll)
     {
         switch (current)

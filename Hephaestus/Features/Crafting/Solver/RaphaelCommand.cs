@@ -6,9 +6,13 @@ using Hephaestus.Features.Crafting.Simulation;
 
 namespace Hephaestus.Features.Crafting.Solver;
 
-/// <summary>Everything raphael-cli needs to solve one craft. Two equal requests have the same solution.</summary>
+/// <summary>
+/// Everything a planner needs to lay out one craft - ours (<see cref="Planner.OwnPlan"/>) or raphael-cli. Two equal
+/// requests have the same solution.
+/// </summary>
 /// <param name="RecipeLevel">RecipeLevelTable row id ("rlvl").</param>
 /// <param name="InitialQuality">Quality already present at step 1, from HQ materials.</param>
+/// <param name="TrainedEye">The recipe is ten or more levels below the crafter and not expert: Trained Eye may be used. Our planner's; raphael-cli works it out itself.</param>
 public readonly record struct BaselineRequest(
     int RecipeLevel,
     int MaxProgress,
@@ -25,7 +29,8 @@ public readonly record struct BaselineRequest(
     bool Manipulation,
     bool HeartAndSoul,
     bool QuickInnovation,
-    bool BackloadProgress);
+    bool BackloadProgress,
+    bool TrainedEye = false);
 
 /// <summary>
 /// The raphael-cli command line and its output, as pure text — so both are testable without
@@ -81,6 +86,11 @@ public static class RaphaelCommand
             foreach (var name in line[1..^1].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
             {
                 if (!CraftActionNames.TryParse(name, out var action))
+                    return null;
+
+                // The simulator models the Cosmic duty actions, but the plugin cannot press them (no mission lends it
+                // the charges): a plan that leans on one is not a plan it can follow.
+                if (action is CraftAction.StellarSteadyHand or CraftAction.MaterialMiracle)
                     return null;
                 actions.Add(action);
             }

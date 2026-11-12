@@ -4,8 +4,11 @@ namespace Hephaestus.Features.Crafting.Simulation;
 /// Every crafting action the simulator models. Order is ours (not a game id) — it only indexes
 /// <see cref="ActionMask"/> bits.
 ///
-/// Not modelled yet: Final Appraisal, Careful Observation, and the Cosmic Exploration actions
-/// (Material Miracle, Stellar Steady Hand).
+/// Not modelled yet: Final Appraisal and Careful Observation.
+///
+/// The two Cosmic Exploration duty actions ARE modelled but are never offered by the plugin: they
+/// are outside <see cref="ActionMask.Regular"/>, and they need charges nobody but a mission gives
+/// (<see cref="CraftState.SteadyHandCharges"/>, <see cref="CraftState.MaterialMiracleCharges"/>).
 /// </summary>
 public enum CraftAction : byte
 {
@@ -43,6 +46,15 @@ public enum CraftAction : byte
     RapidSynthesis,
     HastyTouch,
     DaringTouch,
+
+    /// <summary>Cosmic Exploration duty action: the next three steps cannot fail. Takes a step and a mission charge.</summary>
+    StellarSteadyHand,
+
+    /// <summary>
+    /// Cosmic Exploration duty action: for 45 seconds every new condition is one of Good, Centered, Sturdy,
+    /// Pliant, Malleable or Primed. Instant (no step); takes a mission charge.
+    /// </summary>
+    MaterialMiracle,
 }
 
 /// <summary>Why an action cannot be used from a state. <see cref="None"/> means it can.</summary>
@@ -110,10 +122,12 @@ public static class ActionMask
 
     /// <summary>
     /// Everything except the actions that need something beyond job level: Trained Eye (recipe
-    /// must be 10+ levels below you and not expert) and the specialist actions.
+    /// must be 10+ levels below you and not expert), the specialist actions, and the Cosmic
+    /// Exploration duty actions (a mission lends them).
     /// </summary>
     public static readonly ulong Regular =
-        Without(Without(Without(All, CraftAction.TrainedEye), CraftAction.HeartAndSoul), CraftAction.QuickInnovation);
+        Without(Without(Without(Without(Without(All, CraftAction.TrainedEye), CraftAction.HeartAndSoul), CraftAction.QuickInnovation),
+            CraftAction.StellarSteadyHand), CraftAction.MaterialMiracle);
 
     public static ulong With(ulong mask, CraftAction action) => mask | (1UL << (int)action);
 
