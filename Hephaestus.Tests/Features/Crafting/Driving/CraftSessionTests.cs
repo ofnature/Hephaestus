@@ -100,6 +100,35 @@ public class CraftSessionTests
     }
 
     [Fact]
+    public void TheShownEstimate_LearnsFromHowLongCraftsReallyTake()
+    {
+        var session = Session();
+        var ended = new List<SynthesisRecord>();
+        session.SynthesisEnded += ended.Add;
+        Assert.Equal(0.8, session.EstimateScale);
+        Assert.Null(session.SecondsLeft);
+
+        TickUntilPress(session, Fresh());
+        var raw = session.Current!.Value.SecondsLeft;
+        Assert.True(raw > 10, $"the plan's own estimate: {raw}");
+        Assert.Equal(raw * 0.8, session.SecondsLeft!.Value, 6);
+
+        // The craft is over in half the time the solver's estimate said.
+        var start = _now;
+        var done = CraftSimulator.Initial(P) with { Progress = P.MaxProgress };
+        _now = start.AddSeconds(raw / 2 - 1);
+        session.Tick(Snapshot(done, stepIndex: 12), false, true, _now);
+        _now = _now.AddSeconds(1);
+        session.Tick(null, false, true, _now);
+
+        var record = Assert.Single(ended);
+        Assert.Equal(raw * 0.8, record.FirstEstimate, 6); // what the window had shown
+        var took = record.Seconds / raw;
+        Assert.InRange(took, 0.4, 0.6);
+        Assert.Equal(0.5 * 0.8 + 0.5 * took, session.EstimateScale, 6);
+    }
+
+    [Fact]
     public void TheCraftTimeLine_ReadsLikeASentence()
     {
         var made = new SynthesisRecord(1, default, 53.4, 31, 7400, 7400, 26300, 26300, Expert: true, TopRating: true, FirstEstimate: 71.2);

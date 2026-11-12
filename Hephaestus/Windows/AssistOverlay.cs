@@ -82,12 +82,12 @@ public sealed class AssistOverlay : Window
         Pill.Draw(
             recommendation.FollowsBaseline ? "on plan" : "off plan",
             recommendation.FollowsBaseline ? HephaestusTheme.StatusGreen : HephaestusTheme.StatusYellow);
-        if (recommendation.SecondsLeft >= 0)
+        if (_session.SecondsLeft is { } secondsLeft)
         {
             ImGui.SameLine();
-            ImGui.TextColored(HephaestusTheme.TextSecondary, TimeLeft(recommendation.SecondsLeft));
+            ImGui.TextColored(HephaestusTheme.TextSecondary, TimeLeft(secondsLeft));
             if (ImGui.IsItemHovered())
-                ImGui.SetTooltip("An estimate for this item: the solver's own expected steps, at about 2.5 s for an action that works the item and 1.25 s for the rest.");
+                ImGui.SetTooltip("An estimate for this item: the solver's own expected steps, corrected by how long your crafts have really taken this session.");
         }
 
         ImGui.EndGroup();

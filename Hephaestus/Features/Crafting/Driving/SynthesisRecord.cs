@@ -11,7 +11,7 @@ namespace Hephaestus.Features.Crafting.Driving;
 /// <param name="LastStep">The window's step counter when last seen.</param>
 /// <param name="Expert">The expert solver made it (false = a planned rotation with the live evaluator, or nobody: solver off).</param>
 /// <param name="TopRating">A rated collectable (Cosmic mission item): whether it stood at its top rating; null for anything else.</param>
-/// <param name="FirstEstimate">The first "about N s left" the solver gave for it; negative = it never gave one.</param>
+/// <param name="FirstEstimate">The first "about N s left" the window showed for it; negative = none was shown.</param>
 public readonly record struct SynthesisRecord(
     uint RecipeId,
     DateTime Started,

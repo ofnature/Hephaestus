@@ -119,9 +119,21 @@ public sealed class CraftSession
     /// <summary>A synthesis is over (finished, failed or quit): how it went, and how long it took.</summary>
     public event Action<SynthesisRecord>? SynthesisEnded;
 
+    /// <summary>
+    /// What the solver's own estimate is multiplied by before it is shown. The estimate is made of the futures the
+    /// POLICY would play on the simulator's clock; the real craft is steered by the search and runs on the game's
+    /// clock, and came out at 0.76 of it both times it was measured (91 s said, 69 taken; 115 said, 87 taken - user,
+    /// 2026-11-12). It starts near that and then follows what this session's crafts really take.
+    /// </summary>
+    public double EstimateScale { get; private set; } = 0.8;
+
+    /// <summary>About how long the item in hand still takes, as it is shown; null when the solver has not said.</summary>
+    public double? SecondsLeft => Current is { SecondsLeft: >= 0 } current ? current.SecondsLeft * EstimateScale : null;
+
     private DateTime _startedAt;
     private SynthesisSnapshot _last;
-    private double _firstEstimate = -1;
+    private double _firstEstimate = -1; // as the solver gave it
+    private double _firstShown = -1;    // as the window showed it
 
     /// <param name="miracleSeconds">Cosmic Exploration: seconds left on Material Miracle, 0 when it is not running.</param>
     /// <returns>The action to press right now, or null. Only ever non-null when <paramref name="auto"/> is set.</returns>
@@ -298,6 +310,7 @@ public sealed class CraftSession
         _startedAt = now;
         _last = first;
         _firstEstimate = -1;
+        _firstShown = -1;
         _evaluator = null;
         _expertSeated = false;
         _evaluation = null;
@@ -415,8 +428,11 @@ public sealed class CraftSession
             return;
 
         Current = finished.Result;
-        if (_firstEstimate < 0)
+        if (_firstEstimate < 0 && finished.Result.SecondsLeft >= 0)
+        {
             _firstEstimate = finished.Result.SecondsLeft;
+            _firstShown = _firstEstimate * EstimateScale;
+        }
         _recommendedFor = current;
         _hasRecommendation = true;
         _presses = 0;
@@ -427,7 +443,11 @@ public sealed class CraftSession
     {
         var record = new SynthesisRecord(
             _last.RecipeId, _startedAt, Math.Max(0, (now - _startedAt).TotalSeconds), _last.StepIndex, _last.Progress, _last.MaxProgress,
-            _last.Quality, _last.MaxQuality, _expertSeated, LastTopRating, _firstEstimate);
+            _last.Quality, _last.MaxQuality, _expertSeated, LastTopRating, _firstShown);
+
+        // A craft seen from its first step to a full bar teaches the next estimate: half of what was believed, half of what happened.
+        if (record.Finished && _firstEstimate >= 10)
+            EstimateScale = Math.Clamp(0.5 * EstimateScale + 0.5 * record.Seconds / _firstEstimate, 0.5, 1.5);
 
         _active = false;
         _expertSeated = false;
