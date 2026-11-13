@@ -50,6 +50,7 @@ public sealed unsafe class CraftingLogGame
     // callback 6 presses its Synthesize, text node 34 is its "Craftable" number, node 50 its Synthesize button.
     private const string CosmicLogName = "WKSRecipeNotebook";
     private const int CosmicSynthesizeCallback = 6;
+    private const int CosmicSelectCallback = 0;
     private const uint CosmicCraftableNode = 34;
     private const uint CosmicSynthesizeButtonNode = 50;
 
@@ -257,11 +258,43 @@ public sealed unsafe class CraftingLogGame
         }
     }
 
-    private static void OpenRecipe(uint recipeId)
+    /// <summary>
+    /// Bring a recipe up in the log. With the COSMIC log already open the recipe is picked from the log's own list -
+    /// callback 0 with its row (Artisan, GameInterop/PreCrafting.cs TaskSelectRecipe, read from 4.0.5.23) - and
+    /// anywhere else the agent opens it by id, which for a mission's recipe opens the Cosmic log.
+    /// </summary>
+    private void OpenRecipe(uint recipeId)
     {
+        var cosmic = LogAddon() == null ? CosmicLogAddon() : null;
+        if (cosmic != null && CosmicRow(recipeId) is { } row)
+        {
+            var values = stackalloc AtkValue[2];
+            values[0].SetInt(CosmicSelectCallback);
+            values[1].SetInt(row);
+            cosmic->FireCallback(2, values, false);
+            return;
+        }
+
         var agent = AgentRecipeNote.Instance();
         if (agent != null)
             agent->OpenRecipeByRecipeId(recipeId);
+    }
+
+    /// <summary>Where a recipe stands in the list behind the open log; null when it is not in it.</summary>
+    private static int? CosmicRow(uint recipeId)
+    {
+        var recipeNote = RecipeNote.Instance();
+        if (recipeNote == null || recipeNote->RecipeList == null || recipeNote->RecipeList->Recipes == null)
+            return null;
+
+        var list = recipeNote->RecipeList;
+        for (var i = 0; i < list->RecipeCount; i++)
+        {
+            if (list->Recipes[i].RecipeId == recipeId)
+                return i;
+        }
+
+        return null;
     }
 
     /// <summary>

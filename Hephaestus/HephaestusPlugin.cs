@@ -90,6 +90,8 @@ public sealed class HephaestusPlugin : IDalamudPlugin
     private readonly CraftActionExecutor _executor;
     private readonly CraftActionHook _actionHook;
     private readonly CraftSession _session;
+    private readonly CraftRunLauncher _launcher;
+    private readonly JobChange _jobChange = new();
     private readonly ExpertTuningBook _expertTuning;
     private readonly PlannerRunner _planner;
     private readonly CraftSetupReader _setupReader;
@@ -257,7 +259,7 @@ public sealed class HephaestusPlugin : IDalamudPlugin
         _windowSystem.AddWindow(_mainWindow);
 
         // Settings are read when a run starts or resumes, so a change in the window applies to the next run.
-        var launcher = new CraftRunLauncher(_run, RunSettings, blocked: () => _queue.Active || SupplyBusy, viaJobChange: CraftOnAnotherJob);
+        var launcher = _launcher = new CraftRunLauncher(_run, RunSettings, blocked: () => _queue.Active || SupplyBusy, viaJobChange: CraftOnAnotherJob);
 
         _craftingLogWindow = new CraftingLogWindow(
             _config, SaveConfig, _account, _craftingLog, new ConsumableReader(dataManager), _run, launcher, AddToQueue, () => _observation,
@@ -276,7 +278,8 @@ public sealed class HephaestusPlugin : IDalamudPlugin
 
         _ipc = new HephaestusIpc(
             pluginInterface, () => Busy, CraftItemForAnotherPlugin, StopForAnotherPlugin, QueueStatusJson,
-            CraftListForAnotherPlugin, AddToQueueForAnotherPlugin, StartQueueForAnotherPlugin, RequestStopAfterRun);
+            CraftListForAnotherPlugin, AddToQueueForAnotherPlugin, StartQueueForAnotherPlugin, RequestStopAfterRun,
+            CraftSelectedForAnotherPlugin, ChangeJobForAnotherPlugin);
 
         _contextMenu = new QueueContextMenu(
             contextMenu, gameGui, _recipes,
@@ -330,6 +333,7 @@ public sealed class HephaestusPlugin : IDalamudPlugin
         {
             _observation = _craftingLog.Observe(_run.RecipeId);
             TickStopAfterRun(now); // before the queue and the run, so neither starts anything once asked
+            TickJobChange(now);
             TickQueue(now); // first, so a craft it starts begins this same frame
             _desk.Tick(now);
             TickRun(now);
@@ -553,6 +557,36 @@ public sealed class HephaestusPlugin : IDalamudPlugin
         _queue.Halt("stopped");
         _run.Halt("stopped");
         _desk.StopAll();
+        _jobChange.Cancel();
+    }
+
+    /// <summary>Hephaestus.ChangeJob: only takes the request; the frame tick does the closing, the equipping and the watching.</summary>
+    private bool ChangeJobForAnotherPlugin(uint jobId)
+    {
+        var pending = _jobChange.Pending;
+        var accepted = _jobChange.Request(jobId, _jobs.CurrentJob, _jobs.HasGearsetFor(jobId), Busy);
+        if (accepted && !pending && _jobChange.Pending)
+            _log.Information("Hephaestus: another plugin asked for a change to job {0}", jobId);
+        return accepted;
+    }
+
+    private void TickJobChange(DateTime now)
+    {
+        if (!_jobChange.Pending)
+            return;
+
+        switch (_jobChange.Tick(new JobChangeObservation(_jobs.CurrentJob, _observation.LogOpen, _jobs.CanSwitch), now))
+        {
+            case JobChangeCommand.CloseLog:
+                _craftingLog.CloseLog();
+                break;
+            case JobChangeCommand.Equip:
+                _jobs.Equip(_jobChange.Wanted); // accepted or not: the change is judged by the job itself
+                break;
+        }
+
+        if (!_jobChange.Pending)
+            _log.Information("Hephaestus: job change — {0}", _jobChange.Status);
     }
 
     /// <summary>
@@ -615,6 +649,7 @@ public sealed class HephaestusPlugin : IDalamudPlugin
     /// </summary>
     private bool Working
         => _queue.Active || _run.Active || _desk.Buying || _desk.Gathering || _desk.Withdrawing || _desk.FetchingFromChest
+           || _jobChange.Pending
            || (_session.Active && _config.ModeFor(_account.LocalContentId) == ExecutionMode.Auto);
 
     /// <summary>Hephaestus.IsBusy: working, or still handing the character back after a stop-after-run.</summary>
@@ -653,6 +688,33 @@ public sealed class HephaestusPlugin : IDalamudPlugin
         var request = new CraftList { KeepOrder = true };
         request.Add(recipeId, amount);
         return StartOneOff(request, external: true);
+    }
+
+    /// <summary>
+    /// Hephaestus.CraftSelected: N of the recipe selected in the open log - the ordinary one or a Cosmic mission's.
+    /// On the job the character is on, the log stays open. A recipe for ANOTHER job goes the road the Craft X button
+    /// takes for one (and <c>CraftItem</c> always takes): the queue engine changes job, makes it, and hands back.
+    /// </summary>
+    private bool CraftSelectedForAnotherPlugin(int amount)
+    {
+        var observation = _observation;
+        if (amount < 1 || Busy || !observation.LogOpen || observation.SelectedRecipeId == 0)
+            return false;
+        if (_recipes.Read(observation.SelectedRecipeId) is not { } recipe)
+            return false;
+
+        if (recipe.JobId != _jobs.CurrentJob)
+        {
+            var request = new CraftList { KeepOrder = true };
+            request.Add(observation.SelectedRecipeId, amount);
+            return StartOneOff(request, external: true);
+        }
+
+        if (!_launcher.StartRequested(observation.SelectedRecipeId, observation.Craftable, amount))
+            return false;
+
+        _log.Information("Hephaestus: another plugin asked for {0} of the selected recipe ({1})", amount, recipe.Name);
+        return true;
     }
 
     /// <summary>

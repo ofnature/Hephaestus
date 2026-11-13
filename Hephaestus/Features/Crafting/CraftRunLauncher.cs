@@ -68,4 +68,21 @@ public sealed class CraftRunLauncher
         if (!Blocked)
             _run.Resume(_settings());
     }
+
+    /// <summary>
+    /// A start ANOTHER PLUGIN asked for (Hephaestus.CraftSelected): <paramref name="amount"/> of the recipe selected
+    /// in the open log, never more than the materials make. It does not use, or touch, the player's count box. A
+    /// run left halted from before is forgotten first - a pause nobody will resume must not block a caller for good.
+    /// The job is the caller's business: Synthesize is only pressed on the job the character is on.
+    /// </summary>
+    /// <returns>True when a run began.</returns>
+    public bool StartRequested(uint selectedRecipeId, int craftable, int amount)
+    {
+        if (Blocked || _run.Active || selectedRecipeId == 0 || amount < 1 || craftable < 1)
+            return false;
+
+        _run.Clear();
+        _run.Start(selectedRecipeId, Math.Min(amount, craftable), _settings());
+        return _run.Active;
+    }
 }

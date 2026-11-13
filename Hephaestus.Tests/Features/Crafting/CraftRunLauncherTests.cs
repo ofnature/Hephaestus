@@ -120,6 +120,53 @@ public class CraftRunLauncherTests
     /// refused on the wrong job) — it hands recipe and count to whoever can change job first.
     /// </summary>
     [Fact]
+    public void AStartAnotherPluginAskedFor_MakesTheAmountAsked_NeverMoreThanTheMaterialsMake_AndLeavesTheCountBoxAlone()
+    {
+        var (run, launcher) = Create();
+        launcher.Count = 7; // the player's own box
+
+        Assert.True(launcher.StartRequested(selectedRecipeId: 1234, craftable: 10, amount: 3));
+        Assert.True(run.Active);
+        Assert.Equal((1234u, 3), (run.RecipeId, run.Requested));
+        Assert.Equal(7, launcher.Count);
+
+        var (capped, second) = Create();
+        Assert.True(second.StartRequested(1234, craftable: 2, amount: 999));
+        Assert.Equal(2, capped.Requested);
+    }
+
+    [Theory]
+    [InlineData(0u, 10, 3)]   // nothing selected
+    [InlineData(1234u, 0, 3)] // nothing can be made
+    [InlineData(1234u, -1, 3)] // the log has not said yet
+    [InlineData(1234u, 10, 0)] // nothing asked for
+    public void AStartAnotherPluginAskedFor_WithNothingToDo_IsRefused(uint recipeId, int craftable, int amount)
+    {
+        var (run, launcher) = Create();
+
+        Assert.False(launcher.StartRequested(recipeId, craftable, amount));
+        Assert.False(run.Active);
+    }
+
+    [Fact]
+    public void AStartAnotherPluginAskedFor_IsRefusedWhileSomethingRuns_ButReplacesARunLeftHalted()
+    {
+        var queueActive = true;
+        var run = new CraftRun();
+        var launcher = new CraftRunLauncher(run, () => Settings, blocked: () => queueActive);
+        Assert.False(launcher.StartRequested(1234, 10, 1)); // the queue has the character
+
+        queueActive = false;
+        Assert.True(launcher.StartRequested(1234, 10, 5));
+        Assert.False(launcher.StartRequested(1234, 10, 1)); // a run is under way
+
+        run.Halt("the craft would not start");
+        Assert.True(run.CanResume);
+        Assert.True(launcher.StartRequested(4321, 10, 2)); // a pause nobody will resume does not block a caller
+        Assert.Equal((4321u, 2, 0), (run.RecipeId, run.Requested, run.Completed));
+    }
+
+    [Fact]
     public void ARecipeForAnotherJob_IsHandedOver_NotStartedHere()
     {
         var run = new CraftRun();
