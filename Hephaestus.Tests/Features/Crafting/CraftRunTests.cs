@@ -97,6 +97,50 @@ public class CraftRunTests
         Assert.Equal(CraftRunHalt.Cancelled, quit.HaltKind);
     }
 
+    // ---- the broken-gear guard (the user, 2026-11-12: "a broken gear guard for Hephaestus") ----
+
+    [Fact]
+    public void OnWornGear_NoSynthesisIsStarted_TheRunSaysWhy_AndResumesOnceRepaired()
+    {
+        var run = new CraftRun();
+        run.Start(Recipe, 3, Settings); // the gate in Settings is 20%
+        var worn = ReadyInLog() with { MinGearConditionPercent = 19 };
+
+        Assert.Equal(CraftRunCommand.None, Tick(run, worn)); // Synthesize is never pressed
+        Assert.False(run.Active);
+        Assert.Equal(CraftRunHalt.GearGate, run.HaltKind);
+        Assert.Contains("19%", run.Status);
+        Assert.Contains("repair", run.Status);
+        Assert.True(run.CanResume);
+
+        run.Resume(Settings);
+        Assert.Equal(CraftRunCommand.PressSynthesize, Tick(run, ReadyInLog() with { MinGearConditionPercent = 100 }));
+    }
+
+    [Fact]
+    public void GearThatWearsOutMidRun_StopsTheRunBeforeTheNextSynthesis_NotDuringOne()
+    {
+        var run = new CraftRun();
+        run.Start(Recipe, 3, Settings);
+        CompleteOneCraft(run, before: 0);
+        Assert.Equal(1, run.Completed);
+
+        // A piece dropped under the gate during that craft: the next one is not started.
+        Assert.Equal(CraftRunCommand.None, Tick(run, ReadyInLog(1) with { MinGearConditionPercent = 3 }));
+        Assert.Equal(CraftRunHalt.GearGate, run.HaltKind);
+        Assert.Equal(1, run.Completed);
+        Assert.True(run.CanResume);
+    }
+
+    [Fact]
+    public void GearExactlyAtTheGate_StillCrafts()
+    {
+        var run = new CraftRun();
+        run.Start(Recipe, 1, Settings);
+
+        Assert.Equal(CraftRunCommand.PressSynthesize, Tick(run, ReadyInLog() with { MinGearConditionPercent = 20 }));
+    }
+
     [Fact]
     public void StopAfterThisCraft_SaysSoWhileItWaits_FinishesTheCraftInHand_ThenPausesResumable()
     {

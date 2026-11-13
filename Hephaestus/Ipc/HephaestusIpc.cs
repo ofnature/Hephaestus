@@ -85,6 +85,10 @@ namespace Hephaestus.Ipc;
 /// True when it was busy and will stop (or already is stopping); false, and nothing changed, when idle.
 /// Idempotent. A paused queue or run stays resumable by hand; a fresh start clears the request.
 /// <b><c>Hephaestus.GetQueueStatusJson</c></b> → <c>string</c> — see <see cref="QueueStatusDto"/>; <c>"{}"</c> on any error, never a throw.
+/// BROKEN GEAR: no gate starts a synthesis on it. Every craft, whoever asked, passes the run's gear gate first
+/// (<c>QueueSettings.GearConditionThresholdPercent</c>, 20% unless the player moved it): a request made on worn
+/// gear still returns true - the run BEGAN - and halts at once without pressing Synthesize; <c>IsBusy</c> falls,
+/// and the status reads <c>RunHalt = "GearGate"</c>, <c>CanResume = true</c>, with the gear and the gate in percent.
 /// <b><c>Hephaestus.GetVersion</c></b> → <c>string</c>.
 /// </para>
 ///
@@ -233,6 +237,39 @@ public sealed class QueueStatusDto
 
     /// <summary>Items the queue gave up on, with the reason.</summary>
     public FlaggedItemDto[] Flagged { get; set; } = Array.Empty<FlaggedItemDto>();
+
+    // ---- added 2026-11-12, for a caller that has to tell WHY nothing is being made (Selene) ----
+
+    /// <summary>
+    /// Why the craft run last stopped itself, by name: "None" while it runs or after it finished, else
+    /// <c>GearGate</c> (a piece of equipped gear is under <see cref="GearGatePercent"/> - NO SYNTHESIS IS STARTED
+    /// ON BROKEN GEAR, whoever asked), <c>OutOfMaterials</c>, <c>WouldNotStart</c>, <c>FailedRepeatedly</c>,
+    /// <c>Cancelled</c>, <c>MaterialChoice</c>, <c>LogUnresponsive</c>, <c>Stopped</c>, <c>InternalError</c>.
+    /// Names are only ever added. <see cref="Status"/> carries the sentence a person reads.
+    /// </summary>
+    public string RunHalt { get; set; } = "None";
+
+    /// <summary>Lowest condition, in percent, across the gear the character has on right now.</summary>
+    public int GearConditionPercent { get; set; } = 100;
+
+    /// <summary>
+    /// The player's gear gate: before EVERY synthesis the run checks the gear, and under this it starts nothing and
+    /// halts as <c>GearGate</c>, resumable once repaired. A caller that wants to know beforehand compares the two.
+    /// </summary>
+    public int GearGatePercent { get; set; }
+
+    /// <summary>
+    /// Whose sentence <see cref="Status"/> is: the queue's while it has the character, the craft run's while a run
+    /// of its own is going or stands halted (Craft X, <c>CraftSelected</c>), else whichever spoke last.
+    /// </summary>
+    public static string StatusLine(bool queueActive, bool queueHasList, string queueStatus, bool runActive, bool runCanResume, string runStatus)
+    {
+        if (queueActive)
+            return queueStatus;
+        if (runActive || runCanResume)
+            return runStatus;
+        return queueHasList ? queueStatus : runStatus;
+    }
 }
 
 public sealed class FlaggedItemDto

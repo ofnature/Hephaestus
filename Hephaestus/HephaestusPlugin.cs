@@ -801,7 +801,7 @@ public sealed class HephaestusPlugin : IDalamudPlugin
         {
             Active = _queue.Active || _run.Active,
             CanResume = _queue.CanResume || _run.CanResume,
-            Status = _queue.Active || _queue.List != null ? _queue.Status : _run.Status,
+            Status = QueueStatusDto.StatusLine(_queue.Active, _queue.List != null, _queue.Status, _run.Active, _run.CanResume, _run.Status),
             External = _externalRequest,
             CurrentRecipeId = item?.RecipeId ?? (_run.Active ? _run.RecipeId : 0),
             CurrentCrafted = item?.Crafted ?? _run.Completed,
@@ -809,6 +809,9 @@ public sealed class HephaestusPlugin : IDalamudPlugin
             ItemsCompleted = _queue.ItemsCompleted,
             ItemsSkipped = _queue.ItemsSkipped,
             Flagged = flagged ?? Array.Empty<FlaggedItemDto>(),
+            RunHalt = _run.HaltKind.ToString(),
+            GearConditionPercent = _observation.MinGearConditionPercent,
+            GearGatePercent = _config.Queue.GearConditionThresholdPercent,
         });
     }
 
