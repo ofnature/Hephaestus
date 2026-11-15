@@ -117,6 +117,64 @@ public class CraftRunTests
         Assert.Equal(CraftRunCommand.PressSynthesize, Tick(run, ReadyInLog() with { MinGearConditionPercent = 100 }));
     }
 
+    // ---- under the gate by request (Hephaestus.FinishUnderGearGate, 2026-11-15) ----
+
+    private static readonly CraftRunSettings DownToTen = new(MaxCraftRetries: 2, GearConditionThresholdPercent: 10, GearFloor: true);
+
+    [Fact]
+    public void ARunGivenAFloor_GoesOnUnderThePlayersGate_AndHaltsAtTheFloor_SayingSo()
+    {
+        var run = new CraftRun();
+        run.Start(Recipe, 3, Settings); // the gate is 20%
+        run.Adopt(DownToTen);           // asked right after the start, before the first tick
+
+        CompleteOneCraft(run, before: 0);
+        Assert.Equal(CraftRunCommand.PressSynthesize, Tick(run, ReadyInLog(1) with { MinGearConditionPercent = 19 }));
+        Tick(run, Synthesizing(100, 10, 1));
+        Tick(run, ReadyInLog(2) with { MinGearConditionPercent = 9 });
+        Assert.Equal(2, run.Completed);
+
+        Assert.Equal(CraftRunCommand.None, Tick(run, ReadyInLog(2) with { MinGearConditionPercent = 9 }));
+        Assert.Equal(CraftRunHalt.GearGate, run.HaltKind);
+        Assert.Contains("9% (floor 10%)", run.Status);
+        Assert.True(run.CanResume);
+    }
+
+    [Fact]
+    public void ARunHaltedOnTheGate_ResumedUnderAFloor_CarriesOnWhereItStopped()
+    {
+        var run = new CraftRun();
+        run.Start(Recipe, 3, Settings);
+        CompleteOneCraft(run, before: 0);
+        var worn = ReadyInLog(1) with { MinGearConditionPercent = 19 };
+        Tick(run, worn);
+        Assert.Equal(CraftRunHalt.GearGate, run.HaltKind);
+        Assert.Contains("(gate 20%)", run.Status);
+
+        run.Resume(DownToTen);
+
+        Assert.Equal(CraftRunCommand.PressSynthesize, Tick(run, worn));
+        Assert.Equal(1, run.Completed);
+        Assert.Equal(3, run.Requested);
+    }
+
+    [Fact]
+    public void SettingsHandedToARunThatIsNotGoing_ChangeNothing()
+    {
+        var run = new CraftRun();
+        run.Start(Recipe, 3, Settings);
+        Tick(run, ReadyInLog() with { MinGearConditionPercent = 19 });
+        Assert.False(run.Active);
+
+        run.Adopt(DownToTen); // halted: not resumed by this, and the next resume brings its own settings
+
+        Assert.False(run.Active);
+        run.Resume(Settings);
+        Tick(run, ReadyInLog() with { MinGearConditionPercent = 19 });
+        Assert.Equal(CraftRunHalt.GearGate, run.HaltKind);
+        Assert.Contains("(gate 20%)", run.Status);
+    }
+
     [Fact]
     public void GearThatWearsOutMidRun_StopsTheRunBeforeTheNextSynthesis_NotDuringOne()
     {

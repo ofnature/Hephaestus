@@ -32,5 +32,6 @@ public class QueueStatusDtoTests
 
         Assert.Equal("None", status.RunHalt);
         Assert.Equal(100, status.GearConditionPercent);
+        Assert.Equal(0, status.RunGearFloorPercent); // no floor under the gate unless a caller asked for one
     }
 }

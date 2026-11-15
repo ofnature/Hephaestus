@@ -93,6 +93,20 @@ namespace Hephaestus.Ipc;
 /// </para>
 ///
 /// <para>
+/// <b><c>Hephaestus.FinishUnderGearGate(int floorPercent)</c></b> → <c>bool</c> — THE WORK IN HAND may go on under
+/// the player's gear gate, down to a floor (added 2026-11-15 for Selene: a Cosmic mission whose gear crosses the
+/// gate between two items is finished, and repaired after). Called AFTER the start it is meant for
+/// (<c>CraftSelected</c> / <c>CraftItem</c> / <c>CraftList</c> answered true), or when that work stands halted as
+/// <c>RunHalt = "GearGate"</c> with <c>CanResume</c> - the craft run is then RESUMED under the floor, where it
+/// stopped (the log is left as it is, as after <c>CraftSelected</c>). The floor that holds is
+/// <c>min(the player's gate, max(floorPercent, 5))</c>: it only ever lowers the gate, and nobody goes under 5%.
+/// It belongs to that work alone - it is gone the moment the work stops, however it stops, and nothing is saved.
+/// True = taken (<c>RunGearFloorPercent</c> in the status says what holds). False, and nothing changed: nothing is
+/// in hand (idle, or halted for another reason), or the gear is already under the floor. At the floor the run
+/// halts as it does at the gate: <c>GearGate</c>, resumable once repaired. NOT seen in game when written.
+/// </para>
+///
+/// <para>
 /// Contract rule (same as Charon's gates and the Daedalus LAN schema): EXTEND-ONLY. A published
 /// gate never changes its signature or meaning; new behaviour gets a new gate, new status fields
 /// are only ever added. No gate may throw into a caller's poll.
@@ -111,11 +125,12 @@ public sealed class HephaestusIpc : IDisposable
     public const string RequestStopAfterRunGate = "Hephaestus.RequestStopAfterRun";
     public const string CraftSelectedGate = "Hephaestus.CraftSelected";
     public const string ChangeJobGate = "Hephaestus.ChangeJob";
+    public const string FinishUnderGearGateGate = "Hephaestus.FinishUnderGearGate";
 
     public static readonly string[] Gates =
     {
         IsBusyGate, CraftItemGate, CraftSelectedGate, CraftListGate, AddToQueueGate, StartQueueGate, ChangeJobGate, StopGate,
-        RequestStopAfterRunGate, GetQueueStatusJsonGate, GetVersionGate,
+        RequestStopAfterRunGate, FinishUnderGearGateGate, GetQueueStatusJsonGate, GetVersionGate,
     };
 
     private readonly ICallGateProvider<bool> _isBusy;
@@ -129,6 +144,7 @@ public sealed class HephaestusIpc : IDisposable
     private readonly ICallGateProvider<bool> _requestStopAfterRun;
     private readonly ICallGateProvider<int, bool> _craftSelected;
     private readonly ICallGateProvider<uint, bool> _changeJob;
+    private readonly ICallGateProvider<int, bool> _finishUnderGearGate;
 
     /// <remarks>Every delegate is wrapped: an exception in ours must never surface inside another plugin.</remarks>
     public HephaestusIpc(
@@ -142,7 +158,8 @@ public sealed class HephaestusIpc : IDisposable
         Func<bool> startQueue,
         Func<bool> requestStopAfterRun,
         Func<int, bool> craftSelected,
-        Func<uint, bool> changeJob)
+        Func<uint, bool> changeJob,
+        Func<int, bool> finishUnderGearGate)
     {
         _isBusy = pluginInterface.GetIpcProvider<bool>(IsBusyGate);
         _isBusy.RegisterFunc(() => Guard(isBusy, fallback: false)); // fail open to idle, as an absent gate reads
@@ -176,6 +193,9 @@ public sealed class HephaestusIpc : IDisposable
 
         _changeJob = pluginInterface.GetIpcProvider<uint, bool>(ChangeJobGate);
         _changeJob.RegisterFunc(jobId => Guard(() => changeJob(jobId), fallback: false));
+
+        _finishUnderGearGate = pluginInterface.GetIpcProvider<int, bool>(FinishUnderGearGateGate);
+        _finishUnderGearGate.RegisterFunc(floor => Guard(() => finishUnderGearGate(floor), fallback: false));
     }
 
     public void Dispose()
@@ -191,6 +211,7 @@ public sealed class HephaestusIpc : IDisposable
         _requestStopAfterRun.UnregisterFunc();
         _craftSelected.UnregisterFunc();
         _changeJob.UnregisterFunc();
+        _finishUnderGearGate.UnregisterFunc();
     }
 
     private static T Guard<T>(Func<T> call, T fallback)
@@ -257,6 +278,14 @@ public sealed class QueueStatusDto
     /// halts as <c>GearGate</c>, resumable once repaired. A caller that wants to know beforehand compares the two.
     /// </summary>
     public int GearGatePercent { get; set; }
+
+    // ---- added 2026-11-15, with Hephaestus.FinishUnderGearGate ----
+
+    /// <summary>
+    /// The floor UNDER the player's gate that the work in hand may go down to, because a caller asked
+    /// (<c>Hephaestus.FinishUnderGearGate</c>); 0 = none, <see cref="GearGatePercent"/> is what holds.
+    /// </summary>
+    public int RunGearFloorPercent { get; set; }
 
     /// <summary>
     /// Whose sentence <see cref="Status"/> is: the queue's while it has the character, the craft run's while a run

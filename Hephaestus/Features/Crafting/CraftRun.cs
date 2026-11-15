@@ -105,7 +105,11 @@ public enum CraftRunHalt
 }
 
 /// <summary>Immutable settings snapshot taken when a run starts or resumes.</summary>
-public readonly record struct CraftRunSettings(int MaxCraftRetries, int GearConditionThresholdPercent);
+/// <param name="GearFloor">
+/// The gear threshold is not the player's gate but a FLOOR under it that a caller asked for
+/// (<see cref="Hephaestus.Features.Crafting.GearFloor"/>): the halt then says "floor".
+/// </param>
+public readonly record struct CraftRunSettings(int MaxCraftRetries, int GearConditionThresholdPercent, bool GearFloor = false);
 
 /// <summary>
 /// The OUTER loop of crafting: make one recipe N times from the crafting log. Pure decision layer —
@@ -196,6 +200,16 @@ public sealed class CraftRun
     {
         if (CanResume)
             Begin(settings);
+    }
+
+    /// <summary>
+    /// The settings changed under a run in hand (Hephaestus.FinishUnderGearGate lowers its gear gate): they hold
+    /// from the next craft it prepares. Idle: nothing to do - a resume takes its settings itself.
+    /// </summary>
+    public void Adopt(CraftRunSettings settings)
+    {
+        if (Active)
+            _settings = settings;
     }
 
     /// <summary>Stop now, at the player's request. The position is kept, so the run can be resumed.</summary>
@@ -314,7 +328,7 @@ public sealed class CraftRun
         // Pre-craft gear gate: broken gear gives no stats, so crafting on it just fails repeatedly.
         if (obs.MinGearConditionPercent < _settings.GearConditionThresholdPercent)
         {
-            Halt(CraftRunHalt.GearGate, $"gear is at {obs.MinGearConditionPercent}% (gate {_settings.GearConditionThresholdPercent}%) — repair, then resume");
+            Halt(CraftRunHalt.GearGate, $"gear is at {obs.MinGearConditionPercent}% ({(_settings.GearFloor ? "floor" : "gate")} {_settings.GearConditionThresholdPercent}%) — repair, then resume");
             return CraftRunCommand.None;
         }
 

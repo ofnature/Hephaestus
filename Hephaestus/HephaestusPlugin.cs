@@ -92,6 +92,7 @@ public sealed class HephaestusPlugin : IDalamudPlugin
     private readonly CraftSession _session;
     private readonly CraftRunLauncher _launcher;
     private readonly JobChange _jobChange = new();
+    private readonly GearFloor _gearFloor = new();
     private readonly ExpertTuningBook _expertTuning;
     private readonly PlannerRunner _planner;
     private readonly CraftSetupReader _setupReader;
@@ -279,7 +280,7 @@ public sealed class HephaestusPlugin : IDalamudPlugin
         _ipc = new HephaestusIpc(
             pluginInterface, () => Busy, CraftItemForAnotherPlugin, StopForAnotherPlugin, QueueStatusJson,
             CraftListForAnotherPlugin, AddToQueueForAnotherPlugin, StartQueueForAnotherPlugin, RequestStopAfterRun,
-            CraftSelectedForAnotherPlugin, ChangeJobForAnotherPlugin);
+            CraftSelectedForAnotherPlugin, ChangeJobForAnotherPlugin, FinishUnderGearGateForAnotherPlugin);
 
         _contextMenu = new QueueContextMenu(
             contextMenu, gameGui, _recipes,
@@ -343,6 +344,13 @@ public sealed class HephaestusPlugin : IDalamudPlugin
             _log.Error(ex, "Hephaestus: queue / craft run update failed");
             _queue.Halt("internal error — see /xllog");
             _run.Halt(CraftRunHalt.InternalError, "internal error — see /xllog");
+        }
+
+        // A gear floor belongs to the work it was asked for: that work has stopped, however it did.
+        if (_gearFloor.Percent > 0 && !_queue.Active && !_run.Active)
+        {
+            _gearFloor.Drop();
+            _log.Information("Hephaestus: the gear floor is dropped — the work it was asked for has stopped");
         }
 
         try
@@ -534,7 +542,34 @@ public sealed class HephaestusPlugin : IDalamudPlugin
     }
 
     private CraftRunSettings RunSettings()
-        => new(_config.Queue.MaxCraftRetries, _config.Queue.GearConditionThresholdPercent);
+    {
+        var gate = _config.Queue.GearConditionThresholdPercent;
+        var floor = _gearFloor.Gate(gate); // lower than the gate only while a caller asked (FinishUnderGearGate)
+        return new(_config.Queue.MaxCraftRetries, floor, GearFloor: floor < gate);
+    }
+
+    /// <summary>
+    /// Hephaestus.FinishUnderGearGate: the work in hand - going, or halted on the gear gate - may go on down to a
+    /// floor under the player's gate. A run halted on the gate is resumed; the floor is dropped by the frame tick
+    /// the moment that work has stopped.
+    /// </summary>
+    private bool FinishUnderGearGateForAnotherPlugin(int floorPercent)
+    {
+        var going = _queue.Active || _run.Active;
+        var halted = !Busy && _run.CanResume && _run.HaltKind == CraftRunHalt.GearGate;
+        if (!_gearFloor.Request(floorPercent, _config.Queue.GearConditionThresholdPercent, _observation.MinGearConditionPercent, going || halted))
+            return false;
+
+        if (_run.Active)
+            _run.Adopt(RunSettings());
+        else if (halted)
+            _run.Resume(RunSettings());
+
+        _log.Information(
+            "Hephaestus: another plugin asked for the work in hand to go on under the gear gate, down to {0}% (asked {1}%, gate {2}%){3}",
+            _gearFloor.Percent, floorPercent, _config.Queue.GearConditionThresholdPercent, halted ? " — the halted run is resumed" : string.Empty);
+        return true;
+    }
 
     /// <summary>Start, or carry on with, the logged-in character's own queue.</summary>
     private void StartQueue()
@@ -558,6 +593,7 @@ public sealed class HephaestusPlugin : IDalamudPlugin
         _run.Halt("stopped");
         _desk.StopAll();
         _jobChange.Cancel();
+        _gearFloor.Drop(); // here too: a Stop and a fresh start can both land between two ticks
     }
 
     /// <summary>Hephaestus.ChangeJob: only takes the request; the frame tick does the closing, the equipping and the watching.</summary>
@@ -812,6 +848,7 @@ public sealed class HephaestusPlugin : IDalamudPlugin
             RunHalt = _run.HaltKind.ToString(),
             GearConditionPercent = _observation.MinGearConditionPercent,
             GearGatePercent = _config.Queue.GearConditionThresholdPercent,
+            RunGearFloorPercent = _gearFloor.Percent < _config.Queue.GearConditionThresholdPercent ? _gearFloor.Percent : 0,
         });
     }
 
