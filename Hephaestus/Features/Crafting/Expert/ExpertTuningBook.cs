@@ -36,6 +36,14 @@ public sealed class ExpertTuningBook
     public const double TimeValue = 10;
 
     /// <summary>
+    /// What a second is worth on a Cosmic rated item the game does not label Expert (an EX mission's two or three
+    /// items, not a Master mission's as-many-as-fit): enough that the solver does not dawdle, far too little to
+    /// gamble the item for. Measured 2026-11-15 on the Voyager Relic Restoration Component and the Ruins Aetheric
+    /// Gauge (CosmicCollectableBenchmark): at <see cref="TimeValue"/> one Component in six was left unfinished.
+    /// </summary>
+    public const double RatedTimeValue = 2;
+
+    /// <summary>
     /// What a second is worth when an ordinary item is made in BULK (a delivered item is worth 1,000 points): the
     /// price the sandbox's five-recipe table was measured at. A one-off is made at 0 - quality first.
     /// </summary>

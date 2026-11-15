@@ -30,7 +30,8 @@ internal static class SandboxProblems
         // ...and an ordinary item that can be high quality is judged by its HQ chance (the "tight" problem of the plugin).
         var recipe = scenario.Recipe;
         return new(scenario.Name, parameters, recipe.ConditionsFlag, scenario.InitialQuality, scenario.TargetQuality,
-            recipe.CollectableTiers, duty, TimeValue: recipe.CollectableTiers != null ? ExpertTuningBook.TimeValue : 0,
+            recipe.CollectableTiers, duty,
+            TimeValue: recipe.CollectableTiers == null ? 0 : recipe.Expert ? ExpertTuningBook.TimeValue : ExpertTuningBook.RatedTimeValue,
             ByHqChance: !recipe.Expert && recipe.CanHq && recipe.RequiredQuality == 0 && recipe.CollectableTiers == null);
     }
 }

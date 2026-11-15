@@ -328,11 +328,11 @@ public sealed class CraftSession
         _settling = default;
         _lastStepIndex = first.StepIndex;
 
-        // An expert recipe is not made from a plan: no solve to wait for.
+        // An expert recipe or a rated mission item is not made from a plan: no solve to wait for.
         if (craft.Expert != null && _expert != null)
         {
             _solveTask = null;
-            Status = "Expert recipe — the expert solver takes it";
+            Status = "Expert recipe or rated mission item — the expert solver takes it";
             return true;
         }
 

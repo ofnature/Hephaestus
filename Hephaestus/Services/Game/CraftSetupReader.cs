@@ -119,8 +119,11 @@ public sealed unsafe class CraftSetupReader
                 TrainedEye: trainedEye);
 
             // An expert recipe goes to the expert solver, with what the item must reach and what a Cosmic mission lends.
+            // So does a Cosmic mission's rated item the game does not label Expert (2026-11-15: as ordinary items they
+            // waited 50 s of the mission's clock for a rotation that could not fill the bar, then were made for the
+            // full bar and not for their ratings - 42% and 78% where the top rating stands at 85%).
             ExpertProblem? problem = null;
-            if (recipe.IsExpert && _config.Solver.ExpertSolver)
+            if (MadeByExpertSolver(recipe))
             {
                 var duty = snapshot.DutyAction;
                 parameters = parameters with
@@ -131,11 +134,13 @@ public sealed unsafe class CraftSetupReader
 
                 var tiers = CosmicRatings(recipe, snapshot.MaxQuality);
                 var target = recipe.RequiredQuality > 0 ? (int)recipe.RequiredQuality : tiers?[^1] ?? snapshot.MaxQuality;
-                // A scored collectable is made against the mission's clock; an item with a demand is worth the time it takes.
+                // A scored collectable is made against the mission's clock - a Master mission's (the Expert ones: as many
+                // as fit) at its full price, any other rated item at a small one; an item with a demand is worth the
+                // time it takes.
                 problem = new ExpertProblem(
                     ItemName(recipe, snapshot.RecipeId), parameters, conditionsFlag,
                     snapshot.StepIndex <= 1 ? snapshot.Quality : 0, target, tiers, duty,
-                    TimeValue: tiers != null ? ExpertTuningBook.TimeValue : 0);
+                    TimeValue: tiers == null ? 0 : recipe.IsExpert ? ExpertTuningBook.TimeValue : ExpertTuningBook.RatedTimeValue);
             }
 
             // An ordinary recipe, as the expert solver would be given it - for the craft our planner finds no rotation to
@@ -164,6 +169,24 @@ public sealed unsafe class CraftSetupReader
         return string.IsNullOrEmpty(name) ? $"recipe {recipeId}" : name;
     }
 
+    /// <summary>The expert solver makes it, with no rotation planned first: the game's Expert recipes and Cosmic rated items.</summary>
+    private bool MadeByExpertSolver(in Recipe recipe)
+        => _config.Solver.ExpertSolver && (recipe.IsExpert || RatingRow(recipe) != null);
+
+    /// <summary>The ratings row of a Cosmic Exploration collectable, when it has one that makes sense.</summary>
+    private MissionRefine? RatingRow(in Recipe recipe)
+    {
+        const int CosmicMetadata = 7;
+        if (recipe.CollectableMetadataKey != CosmicMetadata)
+            return null;
+        if (_data.GetExcelSheet<MissionRefine>().GetRowOrDefault(recipe.CollectableMetadata.RowId) is not { } row)
+            return null;
+        if (row.Unknown0 == 0 || row.Unknown1 < row.Unknown0 || row.Unknown2 < row.Unknown1)
+            return null;
+
+        return row;
+    }
+
     /// <summary>
     /// A Cosmic Exploration collectable's three ratings as QUALITY, lowest first; null for anything else.
     /// Recipe.CollectableMetadataKey 7 = the metadata is a WKSMissionToDoEvalutionRefin row of three percentages of
@@ -172,12 +195,7 @@ public sealed unsafe class CraftSetupReader
     /// </summary>
     private int[]? CosmicRatings(in Recipe recipe, int maxQuality)
     {
-        const int CosmicMetadata = 7;
-        if (recipe.CollectableMetadataKey != CosmicMetadata)
-            return null;
-        if (_data.GetExcelSheet<MissionRefine>().GetRowOrDefault(recipe.CollectableMetadata.RowId) is not { } row)
-            return null;
-        if (row.Unknown0 == 0 || row.Unknown1 < row.Unknown0 || row.Unknown2 < row.Unknown1)
+        if (RatingRow(recipe) is not { } row)
             return null;
 
         return new[]
@@ -236,8 +254,8 @@ public sealed unsafe class CraftSetupReader
             if (recipe.CraftType.RowId + FirstCraftingJob != job)
                 return null;
 
-            // An expert recipe is not made from a Raphael plan (see Read): nothing to pre-solve.
-            if (recipe.IsExpert && _config.Solver.ExpertSolver)
+            // An expert recipe or a rated mission item is not made from a plan (see Read): nothing to pre-solve.
+            if (MadeByExpertSolver(recipe))
                 return null;
 
             var level = player.Level;
