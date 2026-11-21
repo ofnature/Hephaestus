@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using Dalamud.Configuration;
+using Hephaestus.Windows.Dock;
 
 namespace Hephaestus;
 
@@ -59,6 +60,19 @@ public sealed class HephaestusConfig : IPluginConfiguration
 
     /// <summary>The page the main window opens on. Changeable in Settings → Window.</summary>
     public MainPage LandingPage { get; set; } = MainPage.Overview;
+
+    /// <summary>
+    /// A "Hephaestus" tab on a screen edge that pops the main window out beside it (point at it; click to pin) -
+    /// the fleet's edge dock. Off unless asked for, as in Daedalus. A preference of this PC's screen, so it is
+    /// one setting for every client launched here, not a per-character one.
+    /// </summary>
+    public bool EdgeDockEnabled { get; set; }
+
+    /// <summary>The edge the tab sits on; dragging the tab changes it.</summary>
+    public DockEdge EdgeDockEdge { get; set; } = DockEdge.Left;
+
+    /// <summary>Where along that edge the tab wants its centre, 0..1.</summary>
+    public float EdgeDockAlong { get; set; } = 0.5f;
 
     /// <summary>Per-character settings keyed by content id. No entry = follows the globals.</summary>
     public Dictionary<ulong, CharacterSettings> Characters { get; set; } = new();

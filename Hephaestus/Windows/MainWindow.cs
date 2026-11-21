@@ -13,6 +13,7 @@ using Hephaestus.Ipc;
 using Hephaestus.Services;
 using Hephaestus.Services.Game;
 using Hephaestus.Windows.Components;
+using Hephaestus.Windows.Dock;
 using ClassJob = Lumina.Excel.Sheets.ClassJob;
 using Recipe = Lumina.Excel.Sheets.Recipe;
 
@@ -121,6 +122,9 @@ public sealed class MainWindow : Window
             MaximumSize = new Vector2(float.MaxValue, float.MaxValue),
         };
     }
+
+    /// <summary>The edge dock's own Status line, for the Debug page.</summary>
+    public Func<string> DockStatus { get; set; } = () => "off";
 
     /// <summary>The engine is working through THIS list (not another plugin's one-off request).</summary>
     private bool RunningThisQueue => _engine.Active && ReferenceEquals(_engine.List, _queue.List);
@@ -626,6 +630,26 @@ public sealed class MainWindow : Window
                     _saveConfig();
                 }
             });
+
+            var docked = _config.EdgeDockEnabled;
+            if (window.Toggle("A Hephaestus tab on the screen edge", "Point at the tab and this window pops out beside it; click the tab to pin it open; drag it to any edge. It shares the edges with the other plugins' tabs.", ref docked))
+            {
+                _config.EdgeDockEnabled = docked;
+                _saveConfig();
+            }
+
+            if (docked)
+            {
+                window.Row("Tab position", "Dragging the tab moves it; this puts it back in the middle of the left edge.", 170f, () =>
+                {
+                    if (GhostButton("Back to the left edge"))
+                    {
+                        _config.EdgeDockEdge = DockEdge.Left;
+                        _config.EdgeDockAlong = 0.5f;
+                        _saveConfig();
+                    }
+                });
+            }
         }
 
         using (var mode = SettingsGroup.Begin("Execution mode"))
@@ -837,6 +861,7 @@ public sealed class MainWindow : Window
             if (ImGui.IsItemHovered())
                 ImGui.SetTooltip("Reads where vendors stand from the game data, on a background thread (~0.6 s, ~170 MB measured outside the game).\nOnly reads files. If the game hitches or memory climbs when you press this, tell me — that is what this button is for.");
         }
+        StatusLine("Edge dock", DockStatus());
         StatusLine("IPC", string.Join(", ", HephaestusIpc.Gates));
         StatusLine("Queue file", _queue.FilePath);
     }

@@ -19,6 +19,7 @@ using Hephaestus.Ipc;
 using Hephaestus.Services;
 using Hephaestus.Services.Game;
 using Hephaestus.Windows;
+using Hephaestus.Windows.Dock;
 
 namespace Hephaestus;
 
@@ -48,6 +49,8 @@ public sealed class HephaestusPlugin : IDalamudPlugin
     private readonly HephaestusConfig _config;
     private readonly WindowSystem _windowSystem = new("Hephaestus");
     private readonly MainWindow _mainWindow;
+    private readonly EdgeDockWindow _dock;
+    private readonly DockLayoutShare _dockLayout;
     private readonly CraftingLogWindow _craftingLogWindow;
     private readonly CraftAllOverlay _craftAllOverlay;
     private readonly AssistOverlay _assistOverlay;
@@ -259,6 +262,22 @@ public sealed class HephaestusPlugin : IDalamudPlugin
             () => _config.Solver.Planner == PlanSource.Own ? _planner.Status : "not used — Raphael plans the rotations (Settings > Solver)");
         _windowSystem.AddWindow(_mainWindow);
 
+        // The edge dock, as in the rest of the fleet: one "Hephaestus" tab, shown while a character is logged in,
+        // popping the main window's own body out beside it. A fixed size: the sidebar and the page fill what they get.
+        _dockLayout = new DockLayoutShare(pluginInterface, "Hephaestus", order: 50);
+        _dock = new EdgeDockWindow(
+            [new EdgeDockWindow.Tab("main", "Hephaestus", () => _account.LocalContentId != 0, _mainWindow.Draw, 860f, 640f)],
+            _ => (_config.EdgeDockEdge, _config.EdgeDockAlong),
+            (_, edge, along) =>
+            {
+                _config.EdgeDockEdge = edge;
+                _config.EdgeDockAlong = along;
+                SaveConfig();
+            },
+            _dockLayout);
+        _mainWindow.DockStatus = () => _config.EdgeDockEnabled ? _dock.Status : "off — switched off in Settings > Window";
+        _windowSystem.AddWindow(_dock);
+
         // Settings are read when a run starts or resumes, so a change in the window applies to the next run.
         var launcher = _launcher = new CraftRunLauncher(_run, RunSettings, blocked: () => _queue.Active || SupplyBusy, viaJobChange: CraftOnAnotherJob);
 
@@ -323,6 +342,7 @@ public sealed class HephaestusPlugin : IDalamudPlugin
         _actionHook.Dispose();
         _run.CraftCompleted -= OnCraftCompleted;
         _contextMenu.Dispose();
+        _dockLayout.Dispose();
         _ipc.Dispose();
     }
 
@@ -352,6 +372,9 @@ public sealed class HephaestusPlugin : IDalamudPlugin
             _gearFloor.Drop();
             _log.Information("Hephaestus: the gear floor is dropped — the work it was asked for has stopped");
         }
+
+        // AnyTab() also refreshes which tabs the dock shows this frame.
+        _dock.IsOpen = _config.EdgeDockEnabled && _dock.AnyTab();
 
         try
         {
