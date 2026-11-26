@@ -606,7 +606,10 @@ public sealed unsafe class CraftingLogGame
             return 0;
 
         var itemId = _data.GetExcelSheet<Recipe>().GetRowOrDefault(recipeId)?.ItemResult.RowId ?? 0;
-        return itemId == 0 ? 0 : OnHand(inventory, itemId, hq: false) + OnHand(inventory, itemId, hq: true);
+        // [SUPERSEDED 2026-11-26 by InBags — GetInventoryItemCount leaves a COLLECTABLE out, so a custom delivery's
+        // craft never "arrived" and every one of them halted the run as cancelled (the user's roommate, five combines)]
+        // return itemId == 0 ? 0 : OnHand(inventory, itemId, hq: false) + OnHand(inventory, itemId, hq: true);
+        return itemId == 0 ? 0 : InBags(inventory, itemId, hqOnly: false);
     }
 
     /// <summary>HQ count of a run's result item, split out so completion can tell HQ from NQ.</summary>
@@ -617,7 +620,44 @@ public sealed unsafe class CraftingLogGame
             return 0;
 
         var itemId = _data.GetExcelSheet<Recipe>().GetRowOrDefault(recipeId)?.ItemResult.RowId ?? 0;
-        return itemId == 0 ? 0 : OnHand(inventory, itemId, hq: true);
+        // [SUPERSEDED 2026-11-26 by InBags — see CountResultItem]
+        // return itemId == 0 ? 0 : OnHand(inventory, itemId, hq: true);
+        return itemId == 0 ? 0 : InBags(inventory, itemId, hqOnly: true);
+    }
+
+    /// <summary>The four bag pages. A collectable sits here like anything else.</summary>
+    private static readonly InventoryType[] Bags =
+    {
+        InventoryType.Inventory1, InventoryType.Inventory2, InventoryType.Inventory3, InventoryType.Inventory4,
+    };
+
+    /// <summary>
+    /// A craft's RESULT in the bags, counted slot by slot on the item id alone - the way Odysseus counts a delivery
+    /// item, where the same trapdoor was found first: <c>GetInventoryItemCount</c> takes collectability for a filter
+    /// and says zero of a collectable that has just been made.
+    /// </summary>
+    private static int InBags(InventoryManager* inventory, uint itemId, bool hqOnly)
+    {
+        var total = 0;
+        foreach (var bag in Bags)
+        {
+            var container = inventory->GetInventoryContainer(bag);
+            if (container == null || !container->IsLoaded)
+                continue;
+
+            for (var i = 0; i < container->Size; i++)
+            {
+                var slot = container->GetInventorySlot(i);
+                if (slot == null || slot->ItemId != itemId)
+                    continue;
+                if (hqOnly && !slot->Flags.HasFlag(InventoryItem.ItemFlags.HighQuality))
+                    continue;
+
+                total += (int)slot->Quantity;
+            }
+        }
+
+        return total;
     }
 
     /// <summary>
