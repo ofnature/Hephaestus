@@ -56,6 +56,7 @@ public sealed class HephaestusPlugin : IDalamudPlugin
     private readonly AssistOverlay _assistOverlay;
     private readonly HephaestusIpc _ipc;
     private readonly QueueContextMenu _contextMenu;
+    private readonly VendorContextMenu _vendorMenu;
     private readonly CompanyCraftReader _companyCraftReader;
     private readonly WorkshopBuildStore _workshopStore;
     private readonly WorkshopBuildWindow _workshopWindow;
@@ -306,6 +307,11 @@ public sealed class HephaestusPlugin : IDalamudPlugin
             () => _config.Queue.ContextMenu && _characterQueue.ContentId != 0,
             () => _jobs.CurrentJob, AddToQueue, log);
 
+        _vendorMenu = new VendorContextMenu(
+            contextMenu, gameGui, dataManager, vendors, vendorLocations,
+            () => _config.Queue.VendorContextMenu && _account.LocalContentId != 0,
+            () => clientState.TerritoryType, () => objectTable.LocalPlayer?.Position ?? System.Numerics.Vector3.Zero, chat, log);
+
         _commandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
             HelpMessage = "Toggle the Hephaestus window (short alias: /heph).",
@@ -342,6 +348,7 @@ public sealed class HephaestusPlugin : IDalamudPlugin
         _actionHook.Dispose();
         _run.CraftCompleted -= OnCraftCompleted;
         _contextMenu.Dispose();
+        _vendorMenu.Dispose();
         _dockLayout.Dispose();
         _ipc.Dispose();
     }

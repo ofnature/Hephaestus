@@ -65,7 +65,7 @@ public sealed unsafe class QueueContextMenu : IDisposable
             if (!_enabled())
                 return;
 
-            var (itemId, contextJob) = Resolve(args);
+            var (itemId, contextJob) = Resolve(args, _gameGui);
             if (itemId == 0)
                 return;
 
@@ -107,7 +107,7 @@ public sealed unsafe class QueueContextMenu : IDisposable
     }
 
     /// <returns>The right-clicked item (0 = unknown) and the crafting job the menu implies (0 = none).</returns>
-    private (uint ItemId, uint ContextJob) Resolve(IMenuOpenedArgs args)
+    internal static (uint ItemId, uint ContextJob) Resolve(IMenuOpenedArgs args, IGameGui gameGui)
     {
         if (args.MenuType == ContextMenuType.Inventory)
             return (args.Target is MenuTargetInventory { TargetItem: { } item } ? item.BaseItemId : 0u, 0u);
@@ -123,7 +123,7 @@ public sealed unsafe class QueueContextMenu : IDisposable
             return (agent->ContextMenuResultItemId, job);
         }
 
-        var hovered = _gameGui.HoveredItem;
+        var hovered = gameGui.HoveredItem;
         return hovered is 0 or >= FirstEventItem ? (0u, 0u) : ((uint)(hovered % ItemIdModulus), 0u);
     }
 }

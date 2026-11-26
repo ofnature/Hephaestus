@@ -725,6 +725,13 @@ public sealed class MainWindow : Window
                 _saveConfig();
             }
 
+            var vendorMenu = _config.Queue.VendorContextMenu;
+            if (queue.Toggle("Right-click menu: \"Vendor Location\"", "Shown for items an NPC sells for gil: pick a seller and the map opens with a flag on them, and the price and place go to chat. Only gil shops - not scrips, seals or tomestones.", ref vendorMenu))
+            {
+                _config.Queue.VendorContextMenu = vendorMenu;
+                _saveConfig();
+            }
+
             ImGui.BeginDisabled();
             var autoRepair = _config.Queue.AutoRepair;
             var upkeep = _config.Queue.FoodPotionUpkeep;

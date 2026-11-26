@@ -173,6 +173,9 @@ public sealed class QueueSettings
     /// <summary>Offer "Add to Hephaestus Queue" on the game's right-click menus, for craftable items.</summary>
     public bool ContextMenu { get; set; } = true;
 
+    /// <summary>Offer "Vendor Location" on the game's right-click menus, for items an NPC sells for gil.</summary>
+    public bool VendorContextMenu { get; set; } = true;
+
     /// <summary>Self-repair with Dark Matter, else a same-zone mender; pause only if neither works.</summary>
     public bool AutoRepair { get; set; } = true;
 
