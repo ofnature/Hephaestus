@@ -29,7 +29,7 @@ namespace Hephaestus;
 /// </summary>
 public sealed class HephaestusPlugin : IDalamudPlugin
 {
-    public const string PluginVersion = "0.1.0";
+    public const string PluginVersion = "0.2.0";
 
     private const string CommandName = "/hephaestus";
     private const string CommandAlias = "/heph";

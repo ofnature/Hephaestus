@@ -3,7 +3,7 @@
   <PropertyGroup>
     <AssemblyName>Hephaestus</AssemblyName>
     <RootNamespace>Hephaestus</RootNamespace>
-    <Version>0.1.0</Version>
+    <Version>0.2.0</Version>
     <DalamudLibPath>$(AppData)\XIVLauncher\addon\Hooks\dev\</DalamudLibPath>
   </PropertyGroup>
 
