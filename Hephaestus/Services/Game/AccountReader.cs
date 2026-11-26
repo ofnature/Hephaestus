@@ -23,6 +23,23 @@ public sealed unsafe class AccountReader
     /// </summary>
     public bool IsFreeTrial => _condition[ConditionFlag.OnFreeTrial];
 
+    /// <summary>The character's Grand Company, 1-3 (Maelstrom, Twin Adder, Immortal Flames); 0 = none, or unknown.</summary>
+    public byte GrandCompany
+    {
+        get
+        {
+            try
+            {
+                var playerState = PlayerState.Instance();
+                return playerState == null ? (byte)0 : playerState->GrandCompany;
+            }
+            catch
+            {
+                return 0;
+            }
+        }
+    }
+
     /// <summary>The logged-in character's content id (0 when not logged in) — the stable
     /// per-character key for settings overrides and the craft queue file.</summary>
     public ulong LocalContentId

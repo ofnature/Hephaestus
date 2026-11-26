@@ -57,6 +57,7 @@ public sealed class HephaestusPlugin : IDalamudPlugin
     private readonly HephaestusIpc _ipc;
     private readonly QueueContextMenu _contextMenu;
     private readonly VendorContextMenu _vendorMenu;
+    private readonly VendorGuide _vendorGuide;
     private readonly CompanyCraftReader _companyCraftReader;
     private readonly WorkshopBuildStore _workshopStore;
     private readonly WorkshopBuildWindow _workshopWindow;
@@ -307,10 +308,21 @@ public sealed class HephaestusPlugin : IDalamudPlugin
             () => _config.Queue.ContextMenu && _characterQueue.ContentId != 0,
             () => _jobs.CurrentJob, AddToQueue, log);
 
+        // "Vendor Location": the right-click entry opens the window; a seller picked there is shown by the guide.
+        // Special merchants (seals, scrips, an item for an item) are for SHOWING only: buying stays with `vendors`.
+        _vendorGuide = new VendorGuide(gameGui, objectTable, dataManager, chat, log);
+        var specialVendors = new SpecialVendorCatalog(dataManager, log);
+        var vendorWindow = new VendorLocationWindow(
+            dataManager, vendors, specialVendors, vendorLocations, _vendorGuide,
+            () => clientState.TerritoryType, () => objectTable.LocalPlayer?.Position ?? System.Numerics.Vector3.Zero,
+            () => _account.GrandCompany);
+        _windowSystem.AddWindow(vendorWindow);
+        _mainWindow.VendorGuideStatus = () => _vendorGuide.Status;
+        _mainWindow.SpecialVendorStatus = () => specialVendors.Status;
         _vendorMenu = new VendorContextMenu(
-            contextMenu, gameGui, dataManager, vendors, vendorLocations,
+            contextMenu, gameGui, vendors, specialVendors,
             () => _config.Queue.VendorContextMenu && _account.LocalContentId != 0,
-            () => clientState.TerritoryType, () => objectTable.LocalPlayer?.Position ?? System.Numerics.Vector3.Zero, chat, log);
+            vendorWindow.Show, log);
 
         _commandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
@@ -349,6 +361,7 @@ public sealed class HephaestusPlugin : IDalamudPlugin
         _run.CraftCompleted -= OnCraftCompleted;
         _contextMenu.Dispose();
         _vendorMenu.Dispose();
+        _vendorGuide.Clear(); // leave no merchant outlined by a plugin that is gone
         _dockLayout.Dispose();
         _ipc.Dispose();
     }
@@ -386,6 +399,7 @@ public sealed class HephaestusPlugin : IDalamudPlugin
         try
         {
             TickSession(now);
+            _vendorGuide.Tick(now);
             _warmup?.Tick(now);
             _retainerWatcher.Tick(now);
         }

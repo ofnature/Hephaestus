@@ -123,6 +123,12 @@ public sealed class MainWindow : Window
         };
     }
 
+    /// <summary>The vendor guide's Status line (a seller picked in the Vendor Location window), for the Debug page.</summary>
+    public Func<string> VendorGuideStatus { get; set; } = () => "off";
+
+    /// <summary>The special merchants' catalog's Status line, for the Debug page.</summary>
+    public Func<string> SpecialVendorStatus { get; set; } = () => "off";
+
     /// <summary>The edge dock's own Status line, for the Debug page.</summary>
     public Func<string> DockStatus { get; set; } = () => "off";
 
@@ -726,7 +732,7 @@ public sealed class MainWindow : Window
             }
 
             var vendorMenu = _config.Queue.VendorContextMenu;
-            if (queue.Toggle("Right-click menu: \"Vendor Location\"", "Shown for items an NPC sells for gil: pick a seller and the map opens with a flag on them, and the price and place go to chat. Only gil shops - not scrips, seals or tomestones.", ref vendorMenu))
+            if (queue.Toggle("Right-click menu: \"Vendor Location\"", "Shown for items an NPC sells - for gil, or at a special merchant for seals, scrips, tomestones or another item: a window lists who sells it, where, and for what; pick one and the map opens with a flag, and the merchant and the item in their shop light up until the window is closed. The queue itself still only buys for gil.", ref vendorMenu))
             {
                 _config.Queue.VendorContextMenu = vendorMenu;
                 _saveConfig();
@@ -868,6 +874,8 @@ public sealed class MainWindow : Window
             if (ImGui.IsItemHovered())
                 ImGui.SetTooltip("Reads where vendors stand from the game data, on a background thread (~0.6 s, ~170 MB measured outside the game).\nOnly reads files. If the game hitches or memory climbs when you press this, tell me — that is what this button is for.");
         }
+        StatusLine("Vendor guide", VendorGuideStatus());
+        StatusLine("Special merchants", SpecialVendorStatus());
         StatusLine("Edge dock", DockStatus());
         StatusLine("IPC", string.Join(", ", HephaestusIpc.Gates));
         StatusLine("Queue file", _queue.FilePath);
@@ -898,7 +906,7 @@ public sealed class MainWindow : Window
         ImGui.NewLine();
     }
 
-    private static bool GhostButton(string label)
+    internal static bool GhostButton(string label)
     {
         using var color = ImRaii.PushColor(ImGuiCol.Button, HephaestusTheme.CardBgSoft)
             .Push(ImGuiCol.ButtonHovered, HephaestusTheme.CardBgHover)
