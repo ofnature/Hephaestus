@@ -165,10 +165,14 @@ public sealed class VendorLocationWindow : Window
     {
         // What each (NPC, shop) asks. An NPC can list one item twice, at two prices: both are said.
         var costs = new Dictionary<(uint Npc, uint Shop), string>();
+        var wheres = new Dictionary<(uint Npc, uint Shop), string>();
         var sellers = new List<PlacedSeller>();
 
-        void Add(uint npc, uint shop, string cost)
+        void Add(uint npc, uint shop, string cost, string where = "")
         {
+            if (where.Length > 0)
+                wheres.TryAdd((npc, shop), where);
+
             if (costs.TryGetValue((npc, shop), out var known))
             {
                 if (!known.Contains(cost, StringComparison.Ordinal))
@@ -193,7 +197,7 @@ public sealed class VendorLocationWindow : Window
             if (seller.GrandCompany != 0 && company != 0 && seller.GrandCompany != company)
                 continue;
 
-            Add(seller.NpcDataId, seller.ShopId, seller.Cost);
+            Add(seller.NpcDataId, seller.ShopId, seller.Cost, seller.Where);
         }
 
         var territories = _data.GetExcelSheet<TerritoryType>();
@@ -207,7 +211,11 @@ public sealed class VendorLocationWindow : Window
             var cost = costs[(seller.NpcDataId, seller.ShopId)];
             if (seller.Territory != 0)
             {
-                rows.Add(new Row(seller, name, Place(seller, territories), cost));
+                // Where in their window, when the sheets say (a Grand Company's exchange has twelve tabs).
+                var place = Place(seller, territories);
+                if (wheres.TryGetValue((seller.NpcDataId, seller.ShopId), out var where))
+                    place = $"{place} · {where}";
+                rows.Add(new Row(seller, name, place, cost));
                 continue;
             }
 

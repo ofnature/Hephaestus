@@ -25,7 +25,8 @@ namespace Hephaestus.Services.Game;
 /// <param name="ShopId">The event handler of the shop the item is in.</param>
 /// <param name="Cost">In words: "600 × Storm Seal".</param>
 /// <param name="GrandCompany">1-3 when only members of that Grand Company are served; else 0.</param>
-public readonly record struct SpecialSeller(uint NpcDataId, uint ShopId, string Cost, byte GrandCompany = 0);
+/// <param name="Where">Where in the seller's window the item is, when the sheets say: "3rd rank tab, Materials".</param>
+public readonly record struct SpecialSeller(uint NpcDataId, uint ShopId, string Cost, byte GrandCompany = 0, string Where = "");
 
 /// <summary>
 /// WHO SELLS WHAT THAT <see cref="VendorCatalog"/> DOES NOT KNOW (user, 2026-11-26: "can we do special merchants
@@ -225,10 +226,12 @@ public static class SpecialShopIndex
                 if (category.GrandCompany.RowId != company || !_gcItems.TryGetRow(category.RowId, out var stock))
                     continue;
 
+                // The exchange window's two rows of tabs: the rank down its side (Tier), the kind along its top.
+                var where = $"{Ordinal(category.Tier)} rank tab, {SealTab(category.SubCategory)}";
                 foreach (var entry in stock)
                 {
                     if (entry.Item.RowId != 0 && entry.SortKey != 0 && entry.CostGCSeals != 0)
-                        Add(entry.Item.RowId, npc, shopId, SpecialCost.Text(new[] { (entry.CostGCSeals, FirstSealItem + company, seal) }), company);
+                        Add(entry.Item.RowId, npc, shopId, SpecialCost.Text(new[] { (entry.CostGCSeals, FirstSealItem + company, seal) }), company, where);
                 }
             }
         }
@@ -267,14 +270,26 @@ public static class SpecialShopIndex
             }
         }
 
-        private void Add(uint itemId, uint npc, uint shopId, string cost, byte company = 0)
+        private static string Ordinal(int tier) => tier switch { 1 => "1st", 2 => "2nd", 3 => "3rd", _ => $"{tier}th" };
+
+        /// <summary><c>GCScripShopCategory.SubCategory</c> as the window's tabs read (checked against the game data, 2026-11-26).</summary>
+        private static string SealTab(int subCategory) => subCategory switch
+        {
+            1 => "Materiel",
+            2 => "Weapons",
+            3 => "Armor",
+            4 => "Materials",
+            _ => $"tab {subCategory}",
+        };
+
+        private void Add(uint itemId, uint npc, uint shopId, string cost, byte company = 0, string where = "")
         {
             if (cost.Length == 0 || !_seen.Add((itemId, npc, shopId, cost)))
                 return;
 
             if (!Found.TryGetValue(itemId, out var sellers))
                 Found[itemId] = sellers = new List<SpecialSeller>(1);
-            sellers.Add(new SpecialSeller(npc, shopId, cost, company));
+            sellers.Add(new SpecialSeller(npc, shopId, cost, company, where));
         }
 
         private string ItemName(uint itemId)

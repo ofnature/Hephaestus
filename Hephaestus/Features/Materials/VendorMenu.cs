@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Numerics;
 
@@ -77,7 +78,37 @@ public static class VendorMenu
         if (string.Equals(shown, itemName, System.StringComparison.Ordinal))
             return true;
 
-        var stem = shown.TrimEnd('.', '…').TrimEnd();
-        return stem.Length > 0 && stem.Length < shown.Length && itemName.StartsWith(stem, System.StringComparison.Ordinal);
+        var cut = shown.TrimEnd('.', '…');
+        if (cut.Length == shown.Length)
+            return false; // not cut short: a different name
+
+        var stem = cut.TrimEnd();
+        return stem.Length > 0 && itemName.StartsWith(stem, System.StringComparison.Ordinal);
+    }
+
+    /// <summary>The same, on the UTF-8 a window holds: asked of every line of a shop window, every frame, so nothing is allocated.</summary>
+    public static bool RowNames(System.ReadOnlySpan<byte> shown, System.ReadOnlySpan<byte> itemName)
+    {
+        if (shown.IsEmpty || itemName.IsEmpty)
+            return false;
+        if (shown.SequenceEqual(itemName))
+            return true;
+
+        var stem = shown;
+        while (true)
+        {
+            if (stem.EndsWith("."u8))
+                stem = stem[..^1];
+            else if (stem.EndsWith("…"u8))
+                stem = stem[..^3];
+            else
+                break;
+        }
+
+        if (stem.Length == shown.Length)
+            return false; // not cut short: a different name
+
+        stem = stem.TrimEnd((byte)' ');
+        return !stem.IsEmpty && itemName.StartsWith(stem);
     }
 }

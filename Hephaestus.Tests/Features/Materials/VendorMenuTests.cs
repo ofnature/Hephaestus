@@ -42,8 +42,23 @@ public class VendorMenuTests
     [InlineData("...", "Iron Ore", false)]
     [InlineData("", "Iron Ore", false)]
     [InlineData("Iron", "Iron Ore", false)] // not cut short: a different, shorter name
+    [InlineData("Iron ", "Iron Ore", false)]
     public void AShopRowNamesTheItem_WhenItSaysItsName_OrTheBeginningOfItCutShort(string shown, string item, bool expected)
         => Assert.Equal(expected, VendorMenu.RowNames(shown, item));
+
+    [Theory]
+    [InlineData("Duck Bones", "Duck Bones", true)]
+    [InlineData("Duck Bones", "Duck Broth", false)]
+    [InlineData("Wrapped Maple Lon...", "Wrapped Maple Longbow", true)]
+    [InlineData("Wrapped Maple Lon…", "Wrapped Maple Longbow", true)] // one ellipsis character
+    [InlineData("Wrapped Maple ...", "Wrapped Maple Longbow", true)]
+    [InlineData("Wrapped Maple Lon...", "Wrapped Elm Longbow", false)]
+    [InlineData("Duck ", "Duck Bones", false)] // not cut short: a different line
+    [InlineData("Duck", "Duck Bones", false)]
+    [InlineData("...", "Duck Bones", false)]
+    [InlineData("", "Duck Bones", false)]
+    public void TheSameRule_OnTheBytesAWindowHolds(string shown, string item, bool expected)
+        => Assert.Equal(expected, VendorMenu.RowNames(System.Text.Encoding.UTF8.GetBytes(shown), System.Text.Encoding.UTF8.GetBytes(item)));
 
     // [SUPERSEDED 2026-11-26 by the two Order tests above — VendorMenu.Pick (one seller a zone, for a submenu) gave way to the window]
     // [Fact]
